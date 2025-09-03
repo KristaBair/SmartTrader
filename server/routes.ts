@@ -415,6 +415,113 @@ If you cannot find specific information, leave those fields empty. Focus on accu
     }
   });
 
+  // Financial Chat API for onboarding
+  app.post("/api/financial-chat", async (req, res) => {
+    try {
+      const { message, chatHistory, savingsAmount } = req.body;
+      
+      const systemPrompt = `You are a helpful financial advisor AI assistant. The user has $${savingsAmount} in savings and wants to start investing. 
+
+Your job is to:
+1. Ask questions about their financial goals, timeline, risk tolerance, and current financial situation
+2. Be conversational and friendly
+3. Once you have enough information about their goals and risk tolerance, set readyForSuggestions to true
+4. Keep responses concise but informative
+
+Current conversation context: The user has ${savingsAmount} in savings and is new to investing.`;
+
+      // Build messages array for OpenAI
+      const messages = [
+        { role: "system", content: systemPrompt },
+        ...chatHistory,
+        { role: "user", content: message }
+      ];
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+        messages: messages,
+        max_tokens: 300,
+        temperature: 0.7,
+      });
+
+      const aiReply = response.choices[0].message.content || "";
+      
+      // Simple logic to determine if we have enough context for suggestions
+      const totalMessages = chatHistory.length + 1;
+      const readyForSuggestions = totalMessages >= 4 || 
+        aiReply.toLowerCase().includes("ready") ||
+        aiReply.toLowerCase().includes("suggest") ||
+        aiReply.toLowerCase().includes("recommend");
+
+      res.json({
+        reply: aiReply,
+        readyForSuggestions
+      });
+
+    } catch (error) {
+      console.error("Financial chat error:", error);
+      res.status(500).json({ message: "Failed to process chat message" });
+    }
+  });
+
+  // Generate Investment Suggestions API
+  app.post("/api/generate-investment-suggestions", async (req, res) => {
+    try {
+      const { savingsAmount, chatHistory } = req.body;
+      
+      // Extract goals and preferences from chat history
+      const conversationSummary = chatHistory
+        .filter((msg: any) => msg.role === "user")
+        .map((msg: any) => msg.content)
+        .join(" ");
+
+      const suggestionPrompt = `Based on this user's conversation and financial situation, create a personalized investment plan.
+
+User has: $${savingsAmount} in savings
+Conversation summary: ${conversationSummary}
+
+Create a JSON response with investment recommendations that include:
+1. An emergency fund (3-6 months expenses)
+2. Diversified investment allocation based on their goals and risk tolerance
+3. Specific categories like: Emergency Fund, Index Funds, Bonds, Individual Stocks, etc.
+
+Format as JSON:
+{
+  "recommendations": [
+    {
+      "category": "Emergency Fund",
+      "suggestedAmount": number,
+      "percentage": number,
+      "explanation": "string explaining why this allocation"
+    }
+  ],
+  "overallStrategy": "string explaining the overall approach",
+  "nextSteps": ["array of action items"]
+}
+
+Make suggestions realistic and appropriate for a beginner investor.`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+        messages: [
+          { role: "system", content: "You are a professional financial advisor providing investment allocation suggestions." },
+          { role: "user", content: suggestionPrompt }
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 800,
+        temperature: 0.3,
+      });
+
+      const suggestions = JSON.parse(response.choices[0].message.content || '{}');
+      
+      res.json(suggestions);
+
+    } catch (error) {
+      console.error("Investment suggestions error:", error);
+      res.status(500).json({ message: "Failed to generate investment suggestions" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

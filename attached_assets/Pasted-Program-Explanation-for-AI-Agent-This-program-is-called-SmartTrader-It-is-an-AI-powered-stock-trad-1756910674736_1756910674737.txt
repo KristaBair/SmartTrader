@@ -1,0 +1,83 @@
+Program Explanation for AI Agent
+
+This program is called SmartTrader. It is an AI-powered stock trading assistant and portfolio manager. The system is built primarily in Python with a Streamlit front end for interactive dashboards.
+
+What the program does
+
+User Portfolio Management
+
+Users create a profile with an initial investment and monthly contribution.
+
+The app tracks portfolio holdings, available cash, and transaction history.
+
+AI Investment Suggestions
+
+The program uses an AI advisor (ai_advisor.py) to generate buy/sell/hold suggestions.
+
+Suggestions are based on a stock watchlist (stock_universe.py) and the user’s profile (current holdings, cash, etc.).
+
+Interactive Dashboard
+
+Displays key metrics: initial investment, contributions, cash available, holdings.
+
+Shows an automatically updating growth chart of portfolio performance.
+
+Provides a trade form so users can simulate or record trades.
+
+Logs all transactions and updates portfolio state accordingly.
+
+Auto Refresh
+
+The dashboard auto-refreshes every 5 minutes so new AI suggestions and stock data are always current.
+
+How the program works
+
+Entry Point
+
+The main entry is streamlit_app.py, which runs app/main.py.
+
+For now, it bypasses authentication and loads a test user (krista).
+
+Dashboard Rendering (dashboard.py)
+
+Loads or creates a user profile (utils.py).
+
+Updates monthly contributions.
+
+Displays metrics, holdings, and cash.
+
+Calls the AI advisor to get suggestions for trades.
+
+Renders the portfolio growth chart (charts.py).
+
+Displays past transactions if available.
+
+Trade Management (trade_form.py)
+
+Users can input trades (buy/sell).
+
+Updates cash balance, holdings, and transaction history.
+
+Sets a force_refresh flag so AI suggestions update after trades.
+
+AI Suggestions (ai_advisor.py)
+
+Consumes the user’s portfolio and a stock watchlist.
+
+Generates simple trade recommendations like “Buy”, “Sell”, or “Hold”.
+
+Designed to be extended with more complex predictive models later.
+
+What this program should do (future goals)
+
+Allow full user authentication instead of a hard-coded test user.
+
+Integrate real stock market data (currently simulated via watchlist).
+
+Provide personalized, AI-driven portfolio optimization (e.g., rebalancing, risk-adjusted strategies).
+
+Support real-time notifications when AI detects opportunities.
+
+Expand to include automation, paper trading, and eventually real brokerage integration.
+
+Continuously learn from user trades and market history to improve its suggestions.

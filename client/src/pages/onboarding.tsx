@@ -129,6 +129,54 @@ export function Onboarding() {
     }
   };
 
+  const handleAddRecommendationsToPortfolio = async () => {
+    try {
+      // Convert AI recommendations to portfolio entries
+      const portfolioEntries = suggestions.recommendations
+        ?.filter((rec: any) => rec.action === 'BUY' && rec.ticker && rec.ticker !== 'HYSA')
+        .map((rec: any) => ({
+          symbol: rec.ticker,
+          companyName: rec.name,
+          shares: Math.floor(rec.suggestedAmount / 100), // Estimate shares (will be updated with real data)
+          purchasePrice: 100, // Placeholder - will be updated with real price
+          purchaseDate: new Date().toISOString().split('T')[0],
+          currentPrice: 100, // Placeholder - will be updated with real price
+          totalValue: rec.suggestedAmount
+        }));
+
+      if (portfolioEntries && portfolioEntries.length > 0) {
+        // Create a portfolio with the recommended investments
+        const portfolioData = {
+          cash: 0, // User will allocate cash separately for emergency fund
+          investments: portfolioEntries.map(entry => ({
+            symbol: entry.symbol,
+            name: entry.companyName,
+            shares: entry.shares,
+            averagePrice: entry.purchasePrice
+          })),
+          riskTolerance: "moderate", // Default based on getting stock recommendations
+          timeline: "long_term" // Default for investment recommendations
+        };
+
+        await apiRequest("POST", "/api/portfolios", portfolioData);
+
+        toast({
+          title: "Portfolio Updated! 🎉",
+          description: `Added ${portfolioEntries.length} recommended investments to your portfolio`,
+        });
+
+        // Small delay before navigating
+        setTimeout(() => navigate("/dashboard"), 1000);
+      }
+    } catch (error) {
+      toast({
+        title: "Error updating portfolio",
+        description: "Please try again or add investments manually",
+        variant: "destructive"
+      });
+    }
+  };
+
   const proceedToDashboard = async () => {
     try {
       // Save onboarding data for users who completed the savings path
@@ -396,11 +444,29 @@ export function Onboarding() {
             ))}
           </div>
 
-          <div className="text-center mt-8">
-            <Button onClick={proceedToDashboard} size="lg" data-testid="button-proceed-dashboard">
-              <Target className="mr-2 h-5 w-5" />
-              Start My Investment Journey
-            </Button>
+          <div className="text-center mt-8 space-y-4">
+            <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+              <p className="text-blue-800 font-medium mb-3">Ready to start investing? Update your portfolio with your actual purchases!</p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button 
+                  onClick={handleAddRecommendationsToPortfolio} 
+                  variant="default" 
+                  size="lg"
+                  data-testid="button-add-recommendations"
+                >
+                  📊 Add These to My Portfolio
+                </Button>
+                <Button 
+                  onClick={proceedToDashboard} 
+                  variant="outline" 
+                  size="lg"
+                  data-testid="button-proceed-dashboard"
+                >
+                  <Target className="mr-2 h-5 w-5" />
+                  Start My Investment Journey
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

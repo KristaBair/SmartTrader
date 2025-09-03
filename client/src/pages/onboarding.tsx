@@ -41,7 +41,16 @@ export function Onboarding() {
   const [suggestions, setSuggestions] = useState<any>(null);
   const { toast } = useToast();
 
-  const handlePortfolioChoice = () => {
+  const handlePortfolioChoice = async () => {
+    try {
+      // Save onboarding choice for authenticated users
+      await apiRequest("POST", "/api/onboarding", {
+        onboardingType: "portfolio",
+        completed: new Date()
+      });
+    } catch (error) {
+      console.log("Failed to save onboarding data:", error);
+    }
     navigate("/dashboard");
   };
 
@@ -110,7 +119,19 @@ export function Onboarding() {
     }
   };
 
-  const proceedToDashboard = () => {
+  const proceedToDashboard = async () => {
+    try {
+      // Save onboarding data for users who completed the savings path
+      await apiRequest("POST", "/api/onboarding", {
+        onboardingType: "savings",
+        savingsAmount: parseFloat(savingsAmount),
+        chatHistory: chatMessages,
+        investmentSuggestions: suggestions,
+        completed: new Date()
+      });
+    } catch (error) {
+      console.log("Failed to save onboarding data:", error);
+    }
     navigate("/dashboard");
   };
 

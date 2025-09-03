@@ -522,6 +522,57 @@ Make suggestions realistic and appropriate for a beginner investor.`;
     }
   });
 
+  // Save Onboarding Data API
+  app.post("/api/onboarding", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { onboardingType, savingsAmount, chatHistory, investmentSuggestions } = req.body;
+      
+      // Check if user already has onboarding data
+      const existingData = await storage.getOnboardingDataByUserId(userId);
+      
+      let onboardingData;
+      if (existingData) {
+        // Update existing data
+        onboardingData = await storage.updateOnboardingData(existingData.id, {
+          onboardingType,
+          savingsAmount: savingsAmount?.toString(),
+          chatHistory,
+          investmentSuggestions,
+          completed: new Date(),
+        });
+      } else {
+        // Create new onboarding data
+        onboardingData = await storage.createOnboardingData({
+          userId,
+          onboardingType,
+          savingsAmount: savingsAmount?.toString(),
+          chatHistory,
+          investmentSuggestions,
+          completed: new Date(),
+        });
+      }
+      
+      res.json(onboardingData);
+    } catch (error) {
+      console.error("Save onboarding data error:", error);
+      res.status(500).json({ message: "Failed to save onboarding data" });
+    }
+  });
+
+  // Get Onboarding Data API
+  app.get("/api/onboarding/user", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const onboardingData = await storage.getOnboardingDataByUserId(userId);
+      
+      res.json(onboardingData || null);
+    } catch (error) {
+      console.error("Get onboarding data error:", error);
+      res.status(500).json({ message: "Failed to get onboarding data" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

@@ -87,6 +87,30 @@ export const transactions = pgTable("transactions", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const onboardingData = pgTable("onboarding_data", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  onboardingType: text("onboarding_type").notNull(), // 'portfolio' or 'savings'
+  savingsAmount: decimal("savings_amount", { precision: 12, scale: 2 }),
+  chatHistory: jsonb("chat_history").$type<Array<{
+    role: string;
+    content: string;
+  }>>(),
+  investmentSuggestions: jsonb("investment_suggestions").$type<{
+    recommendations: Array<{
+      category: string;
+      suggestedAmount: number;
+      percentage: number;
+      explanation: string;
+    }>;
+    overallStrategy?: string;
+    nextSteps?: string[];
+  }>(),
+  completed: timestamp("completed"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const insertPortfolioSchema = createInsertSchema(portfolios).omit({
   id: true,
   createdAt: true,
@@ -108,6 +132,12 @@ export const insertTransactionSchema = createInsertSchema(transactions).omit({
   createdAt: true,
 });
 
+export const insertOnboardingDataSchema = createInsertSchema(onboardingData).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type Portfolio = typeof portfolios.$inferSelect;
 export type InsertPortfolio = z.infer<typeof insertPortfolioSchema>;
 export type Recommendation = typeof recommendations.$inferSelect;
@@ -116,6 +146,8 @@ export type MarketData = typeof marketData.$inferSelect;
 export type InsertMarketData = z.infer<typeof insertMarketDataSchema>;
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
+export type OnboardingData = typeof onboardingData.$inferSelect;
+export type InsertOnboardingData = z.infer<typeof insertOnboardingDataSchema>;
 export type User = typeof users.$inferSelect;
 export type UpsertUser = typeof users.$inferInsert;
 

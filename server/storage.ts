@@ -1,4 +1,4 @@
-import { type Portfolio, type InsertPortfolio, type Recommendation, type InsertRecommendation, type MarketData, type InsertMarketData, type Transaction, type InsertTransaction, type User, type UpsertUser, users, portfolios, recommendations, marketData, transactions } from "@shared/schema";
+import { type Portfolio, type InsertPortfolio, type Recommendation, type InsertRecommendation, type MarketData, type InsertMarketData, type Transaction, type InsertTransaction, type OnboardingData, type InsertOnboardingData, type User, type UpsertUser, users, portfolios, recommendations, marketData, transactions, onboardingData } from "@shared/schema";
 import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -28,6 +28,11 @@ export interface IStorage {
   createTransaction(transaction: InsertTransaction): Promise<Transaction>;
   getTransactionsByPortfolio(portfolioId: string): Promise<Transaction[]>;
   getTransactionsByUser(userId: string): Promise<Transaction[]>;
+
+  // Onboarding data methods
+  createOnboardingData(data: InsertOnboardingData): Promise<OnboardingData>;
+  getOnboardingDataByUserId(userId: string): Promise<OnboardingData | undefined>;
+  updateOnboardingData(id: string, data: Partial<InsertOnboardingData>): Promise<OnboardingData | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -175,6 +180,36 @@ export class DatabaseStorage implements IStorage {
       .from(transactions)
       .where(eq(transactions.userId, userId))
       .orderBy(transactions.createdAt);
+  }
+
+  // Onboarding data methods
+  async createOnboardingData(insertOnboardingData: InsertOnboardingData): Promise<OnboardingData> {
+    const [data] = await db
+      .insert(onboardingData)
+      .values(insertOnboardingData)
+      .returning();
+    return data;
+  }
+
+  async getOnboardingDataByUserId(userId: string): Promise<OnboardingData | undefined> {
+    const [data] = await db
+      .select()
+      .from(onboardingData)
+      .where(eq(onboardingData.userId, userId))
+      .orderBy(onboardingData.createdAt);
+    return data;
+  }
+
+  async updateOnboardingData(id: string, updateData: Partial<InsertOnboardingData>): Promise<OnboardingData | undefined> {
+    const [data] = await db
+      .update(onboardingData)
+      .set({
+        ...updateData,
+        updatedAt: new Date(),
+      })
+      .where(eq(onboardingData.id, id))
+      .returning();
+    return data;
   }
 }
 

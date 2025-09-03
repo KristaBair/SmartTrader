@@ -244,6 +244,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Desktop Notifier API endpoint (CORS enabled for local HTML files)
+  app.get("/api/notifier/recommendations", async (req, res) => {
+    // Set CORS headers for the desktop notifier
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.header('Access-Control-Allow-Methods', 'GET');
+    
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'API Key required' });
+      }
+
+      const apiKey = authHeader.substring(7);
+      
+      // For demo purposes, accept any API key that looks like a valid format
+      // In production, you'd validate against stored API keys
+      if (!apiKey || apiKey.length < 10) {
+        return res.status(401).json({ message: 'Invalid API Key' });
+      }
+
+      // Get sample recommendations (in production, you'd get user-specific data)
+      const sampleRecommendations = [
+        {
+          id: 'notifier-1',
+          symbol: 'AAPL',
+          name: 'Apple Inc.',
+          action: 'BUY',
+          confidence: 0.82,
+          reasoning: 'Strong quarterly earnings and product innovation pipeline.',
+          createdAt: new Date()
+        },
+        {
+          id: 'notifier-2',
+          symbol: 'TSLA',
+          name: 'Tesla, Inc.',
+          action: 'HOLD',
+          confidence: 0.75,
+          reasoning: 'Volatility expected, but long-term outlook remains positive.',
+          createdAt: new Date()
+        },
+        {
+          id: 'notifier-3',
+          symbol: 'SPY',
+          name: 'SPDR S&P 500 ETF',
+          action: 'BUY',
+          confidence: 0.88,
+          reasoning: 'Broad market exposure recommended for portfolio diversification.',
+          createdAt: new Date()
+        }
+      ];
+
+      res.json({
+        recommendations: sampleRecommendations,
+        timestamp: new Date().toISOString(),
+        status: 'success'
+      });
+    } catch (error) {
+      console.error('Notifier API error:', error);
+      res.status(500).json({ message: 'Failed to fetch recommendations' });
+    }
+  });
+
+  // Handle CORS preflight for notifier API
+  app.options("/api/notifier/recommendations", (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.header('Access-Control-Allow-Methods', 'GET');
+    res.sendStatus(200);
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

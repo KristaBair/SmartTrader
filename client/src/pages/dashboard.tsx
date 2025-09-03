@@ -10,8 +10,9 @@ import PortfolioOverview from "@/components/portfolio-overview";
 import TransactionHistory from "@/components/transaction-history";
 import PortfolioGrowthChart from "@/components/portfolio-growth-chart";
 import { useToast } from "@/hooks/use-toast";
-import { Bell, RefreshCw, LogOut, User } from "lucide-react";
+import { Bell, RefreshCw, LogOut, User, Download, Key, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Portfolio, Recommendation } from "@shared/schema";
 
 export default function Dashboard() {
@@ -45,6 +46,7 @@ export default function Dashboard() {
 
   // Guest recommendations state
   const [guestRecommendations, setGuestRecommendations] = useState<Recommendation[]>([]);
+  const [userApiKey, setUserApiKey] = useState<string>('');
 
   // Fetch recommendations if portfolio exists (only for authenticated users)
   const { data: apiRecommendations = [], isLoading: recommendationsLoading } = useQuery<Recommendation[]>({
@@ -114,6 +116,62 @@ export default function Dashboard() {
 
     return () => clearInterval(intervalId);
   }, [queryClient]);
+
+  // Generate API key for desktop notifier
+  const generateApiKey = () => {
+    const key = `st_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    setUserApiKey(key);
+    localStorage.setItem('smarttrader-api-key', key);
+    toast({
+      title: "API Key Generated",
+      description: "Your new API key has been generated and saved.",
+    });
+  };
+
+  // Load API key on mount
+  useEffect(() => {
+    const savedKey = localStorage.getItem('smarttrader-api-key');
+    if (savedKey) {
+      setUserApiKey(savedKey);
+    }
+  }, []);
+
+  const downloadNotifier = () => {
+    const currentDomain = window.location.origin;
+    
+    // Read the notifier HTML file and inject the current domain
+    fetch('/smarttrader-notifier.html')
+      .then(response => response.text())
+      .then(html => {
+        // Inject the current domain into the HTML
+        const updatedHtml = html.replace(
+          'placeholder="https://your-smarttrader-app.replit.app"',
+          `value="${currentDomain}" readonly`
+        );
+        
+        const blob = new Blob([updatedHtml], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'SmartTrader-Desktop-Notifier.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        toast({
+          title: "Download Started",
+          description: "The desktop notifier has been downloaded to your computer.",
+        });
+      })
+      .catch(error => {
+        toast({
+          title: "Download Failed",
+          description: "Could not download the notifier. Please try again.",
+          variant: "destructive",
+        });
+      });
+  };
 
   const handlePortfolioSubmit = async (portfolioData: any) => {
     try {
@@ -393,6 +451,99 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+
+        {/* Desktop Notifier Section */}
+        {!isGuestMode && (
+          <div className="mt-8">
+            <Card className="border-0 shadow-lg">
+              <CardHeader className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-t-lg">
+                <div className="flex items-center space-x-3">
+                  <Monitor className="h-6 w-6" />
+                  <div>
+                    <CardTitle>Desktop Notifications</CardTitle>
+                    <CardDescription className="text-blue-100">
+                      Get instant alerts on your computer when new buy/sell recommendations are available
+                    </CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="text-lg font-semibold mb-3 flex items-center">
+                      <Key className="h-5 w-5 mr-2 text-blue-600" />
+                      API Key
+                    </h4>
+                    <p className="text-gray-600 mb-4 text-sm">
+                      Generate an API key to connect the desktop notifier to your SmartTrader account.
+                    </p>
+                    {userApiKey ? (
+                      <div className="space-y-3">
+                        <div className="p-3 bg-gray-50 rounded-lg border">
+                          <code className="text-sm text-gray-800 break-all">{userApiKey}</code>
+                        </div>
+                        <Button 
+                          onClick={generateApiKey}
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          data-testid="button-regenerate-key"
+                        >
+                          <Key className="h-4 w-4 mr-2" />
+                          Regenerate Key
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button 
+                        onClick={generateApiKey}
+                        className="w-full bg-blue-600 hover:bg-blue-700"
+                        data-testid="button-generate-key"
+                      >
+                        <Key className="h-4 w-4 mr-2" />
+                        Generate API Key
+                      </Button>
+                    )}
+                  </div>
+                  
+                  <div>
+                    <h4 className="text-lg font-semibold mb-3 flex items-center">
+                      <Download className="h-5 w-5 mr-2 text-green-600" />
+                      Download Notifier
+                    </h4>
+                    <p className="text-gray-600 mb-4 text-sm">
+                      Download the desktop notifier app that runs on your computer and shows system notifications.
+                    </p>
+                    <Button 
+                      onClick={downloadNotifier}
+                      className="w-full bg-green-600 hover:bg-green-700"
+                      disabled={!userApiKey}
+                      data-testid="button-download-notifier"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Download Desktop Notifier
+                    </Button>
+                    {!userApiKey && (
+                      <p className="text-xs text-gray-500 mt-2">
+                        Generate an API key first to download the notifier
+                      </p>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h5 className="font-medium text-blue-900 mb-2">How it works:</h5>
+                  <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                    <li>Generate an API key above</li>
+                    <li>Download the desktop notifier app</li>
+                    <li>Open the downloaded HTML file in your browser</li>
+                    <li>Enter your API key and configure notification settings</li>
+                    <li>Keep the page open to receive notifications when new recommendations are available</li>
+                  </ol>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Disclaimer */}
         <div className="mt-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4" data-testid="disclaimer-section">

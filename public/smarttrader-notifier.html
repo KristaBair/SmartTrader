@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartTrader Desktop Notifier</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-weight: 500;
+        }
+        .status.disconnected {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+        }
+        .status.connected {
+            background-color: #dcfce7;
+            color: #166534;
+            border: 1px solid #86efac;
+        }
+        .status.checking {
+            background-color: #fef3c7;
+            color: #92400e;
+            border: 1px solid #fcd34d;
+        }
+        .form-group {
+            margin: 20px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #3b82f6;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        button:hover {
+            background-color: #2563eb;
+        }
+        button:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+        .recommendations {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f9fafb;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+        }
+        .recommendation {
+            margin: 10px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            border-left: 4px solid #3b82f6;
+        }
+        .logs {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f3f4f6;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .settings {
+            background: #f8fafc;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 1px solid #e2e8f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚨 SmartTrader Desktop Notifier</h1>
+        <p>Get instant notifications when new buy/sell recommendations are available</p>
+    </div>
+
+    <div id="status" class="status disconnected">
+        📡 Disconnected - Please configure your settings below
+    </div>
+
+    <div class="settings">
+        <h3>⚙️ Settings</h3>
+        
+        <div class="form-group">
+            <label for="serverUrl">SmartTrader Server URL:</label>
+            <input type="text" id="serverUrl" placeholder="https://your-smarttrader-app.replit.app" />
+        </div>
+
+        <div class="form-group">
+            <label for="apiKey">API Key:</label>
+            <input type="password" id="apiKey" placeholder="Enter your API key from SmartTrader dashboard" />
+            <small>Generate this from your SmartTrader dashboard settings</small>
+        </div>
+
+        <div class="form-group">
+            <label for="checkInterval">Check Interval (minutes):</label>
+            <select id="checkInterval">
+                <option value="5">5 minutes</option>
+                <option value="15" selected>15 minutes</option>
+                <option value="30">30 minutes</option>
+                <option value="60">1 hour</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <button id="connectBtn" onclick="toggleConnection()">Connect & Start Monitoring</button>
+        </div>
+    </div>
+
+    <div class="recommendations" id="recommendations">
+        <h3>📊 Latest Recommendations</h3>
+        <div id="recommendationsList">No recommendations loaded yet</div>
+    </div>
+
+    <div class="logs" id="logs">
+        <strong>Activity Log:</strong><br>
+        Application started...<br>
+    </div>
+
+    <script>
+        let isConnected = false;
+        let checkInterval;
+        let lastRecommendationCount = 0;
+
+        // Request notification permission on load
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().then(permission => {
+                log(`Notification permission: ${permission}`);
+            });
+        }
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logs = document.getElementById('logs');
+            logs.innerHTML += `[${timestamp}] ${message}<br>`;
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function updateStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+
+        function showNotification(title, body) {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(title, {
+                    body: body,
+                    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%233b82f6"><path d="M13 7h8v2h-8v-2zm0 8h8v2h-8v-2zM3 7v2h6V7H3zm0 8h6v2H3v-2z"/></svg>',
+                    tag: 'smarttrader-recommendation'
+                });
+            }
+        }
+
+        async function loadRecommendations() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const apiKey = document.getElementById('apiKey').value;
+
+            if (!serverUrl || !apiKey) {
+                log('Server URL and API Key required');
+                return;
+            }
+
+            try {
+                updateStatus('🔍 Checking for new recommendations...', 'checking');
+                
+                const response = await fetch(`${serverUrl}/api/notifier/recommendations`, {
+                    headers: {
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                displayRecommendations(data.recommendations);
+                
+                // Check if we have new recommendations
+                if (data.recommendations.length > lastRecommendationCount && lastRecommendationCount > 0) {
+                    const newCount = data.recommendations.length - lastRecommendationCount;
+                    showNotification(
+                        '🚨 New Trading Recommendations!', 
+                        `${newCount} new recommendation${newCount > 1 ? 's' : ''} available in SmartTrader`
+                    );
+                    log(`🚨 ${newCount} new recommendation(s) detected!`);
+                }
+                
+                lastRecommendationCount = data.recommendations.length;
+                updateStatus(`✅ Connected - Last checked: ${new Date().toLocaleTimeString()}`, 'connected');
+                log(`Loaded ${data.recommendations.length} recommendation(s)`);
+                
+            } catch (error) {
+                log(`Error loading recommendations: ${error.message}`);
+                updateStatus(`❌ Connection Error: ${error.message}`, 'disconnected');
+            }
+        }
+
+        function displayRecommendations(recommendations) {
+            const container = document.getElementById('recommendationsList');
+            
+            if (!recommendations || recommendations.length === 0) {
+                container.innerHTML = 'No recommendations available';
+                return;
+            }
+
+            container.innerHTML = recommendations.map(rec => `
+                <div class="recommendation">
+                    <strong>${rec.action} ${rec.symbol}</strong> - ${rec.name}<br>
+                    <small>Confidence: ${(rec.confidence * 100).toFixed(0)}% | ${rec.reasoning}</small>
+                </div>
+            `).join('');
+        }
+
+        function toggleConnection() {
+            const btn = document.getElementById('connectBtn');
+            
+            if (isConnected) {
+                // Disconnect
+                clearInterval(checkInterval);
+                isConnected = false;
+                btn.textContent = 'Connect & Start Monitoring';
+                updateStatus('📡 Disconnected', 'disconnected');
+                log('Monitoring stopped');
+            } else {
+                // Connect
+                const serverUrl = document.getElementById('serverUrl').value.trim();
+                const apiKey = document.getElementById('apiKey').value.trim();
+                const interval = parseInt(document.getElementById('checkInterval').value);
+
+                if (!serverUrl || !apiKey) {
+                    alert('Please enter both Server URL and API Key');
+                    return;
+                }
+
+                // Save settings to localStorage
+                localStorage.setItem('smarttrader-notifier-settings', JSON.stringify({
+                    serverUrl, apiKey, interval
+                }));
+
+                isConnected = true;
+                btn.textContent = 'Disconnect';
+                
+                // Initial load
+                loadRecommendations();
+                
+                // Set up periodic checking
+                checkInterval = setInterval(loadRecommendations, interval * 60 * 1000);
+                
+                log(`Monitoring started (checking every ${interval} minutes)`);
+            }
+        }
+
+        // Load saved settings on page load
+        window.onload = function() {
+            const saved = localStorage.getItem('smarttrader-notifier-settings');
+            if (saved) {
+                try {
+                    const settings = JSON.parse(saved);
+                    document.getElementById('serverUrl').value = settings.serverUrl || '';
+                    document.getElementById('apiKey').value = settings.apiKey || '';
+                    document.getElementById('checkInterval').value = settings.interval || 15;
+                    log('Loaded saved settings');
+                } catch (e) {
+                    log('Error loading saved settings');
+                }
+            }
+            
+            log('SmartTrader Desktop Notifier ready');
+            log('Please configure your settings and click Connect');
+        };
+
+        // Handle page visibility change to pause/resume when hidden
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                log('App hidden - continuing monitoring in background');
+            } else {
+                log('App visible - checking for updates');
+                if (isConnected) {
+                    loadRecommendations();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

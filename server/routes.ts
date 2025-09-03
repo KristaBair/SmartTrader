@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { analyzePortfolio, getRiskAssessment } from "./services/openai";
+import { analyzeNewsEvent, generateAlertMessage, shouldGenerateAlert, getMockNewsEvents } from "./services/marketIntelligence";
 import { portfolioFormSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, isAuthenticated } from "./replitAuth";
@@ -448,7 +449,6 @@ Current conversation context: The user has $${savingsAmount} in savings and is n
         model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
         messages: messages,
         max_completion_tokens: 300,
-        temperature: 0.7,
       });
 
       const aiReply = response.choices[0].message.content || "";
@@ -527,7 +527,6 @@ Make suggestions realistic and appropriate for a beginner investor. ${contributi
         ],
         response_format: { type: "json_object" },
         max_completion_tokens: 800,
-        temperature: 0.3,
       });
 
       const suggestions = JSON.parse(response.choices[0].message.content || '{}');
@@ -588,6 +587,128 @@ Make suggestions realistic and appropriate for a beginner investor. ${contributi
     } catch (error) {
       console.error("Get onboarding data error:", error);
       res.status(500).json({ message: "Failed to get onboarding data" });
+    }
+  });
+
+  // Market Intelligence API Routes
+  
+  // Process news and generate market events (admin/background task)
+  app.post("/api/market-intelligence/process-news", async (req, res) => {
+    try {
+      const newsEvents = getMockNewsEvents(); // In production, this would fetch from news APIs
+      const processedEvents = [];
+
+      for (const newsEvent of newsEvents) {
+        try {
+          // Analyze the news event with AI
+          const analysis = await analyzeNewsEvent(newsEvent);
+          
+          // Create market event in database
+          const marketEvent = await storage.createMarketEvent({
+            title: newsEvent.title,
+            description: newsEvent.description,
+            eventType: analysis.eventType,
+            affectedSymbol: analysis.affectedSymbol || null,
+            tone: analysis.tone,
+            impactLevel: analysis.impactLevel,
+            confidence: analysis.confidence,
+            sourceUrl: newsEvent.sourceUrl || null,
+            publishedAt: newsEvent.publishedAt,
+            aiAnalysis: analysis.aiAnalysis,
+          });
+
+          // Generate alerts for users if criteria met
+          if (shouldGenerateAlert(analysis)) {
+            const alertMessage = generateAlertMessage(marketEvent);
+            
+            // For now, create alerts for all authenticated users
+            // In production, this would be based on user preferences and watchlists
+            const alertType = analysis.aiAnalysis.tradingRecommendation === 'BUY' ? 'buy_opportunity' :
+                             analysis.aiAnalysis.tradingRecommendation === 'SELL' ? 'sell_opportunity' : 'watch';
+            
+            // This would typically be done in a background job for all users
+            // For demo purposes, we'll create a placeholder alert
+          }
+
+          processedEvents.push(marketEvent);
+        } catch (error) {
+          console.error(`Failed to analyze news event: ${newsEvent.title}`, error);
+        }
+      }
+
+      res.json({ processedEvents, count: processedEvents.length });
+    } catch (error) {
+      console.error("Process news error:", error);
+      res.status(500).json({ message: "Failed to process news events" });
+    }
+  });
+
+  // Get recent market events
+  app.get("/api/market-events", async (req, res) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 20;
+      const events = await storage.getRecentMarketEvents(limit);
+      res.json(events);
+    } catch (error) {
+      console.error("Get market events error:", error);
+      res.status(500).json({ message: "Failed to get market events" });
+    }
+  });
+
+  // Get user alerts
+  app.get("/api/alerts", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const alerts = await storage.getUserAlerts(userId);
+      res.json(alerts);
+    } catch (error) {
+      console.error("Get alerts error:", error);
+      res.status(500).json({ message: "Failed to get alerts" });
+    }
+  });
+
+  // Get unread user alerts
+  app.get("/api/alerts/unread", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const alerts = await storage.getUnreadUserAlerts(userId);
+      res.json(alerts);
+    } catch (error) {
+      console.error("Get unread alerts error:", error);
+      res.status(500).json({ message: "Failed to get unread alerts" });
+    }
+  });
+
+  // Mark alert as read
+  app.put("/api/alerts/:id/read", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      await storage.markAlertAsRead(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Mark alert read error:", error);
+      res.status(500).json({ message: "Failed to mark alert as read" });
+    }
+  });
+
+  // Create alert for specific user (for when they want to be notified about specific stocks)
+  app.post("/api/alerts", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { marketEventId, alertType, message } = req.body;
+      
+      const alert = await storage.createUserAlert({
+        userId,
+        marketEventId,
+        alertType,
+        message,
+        isRead: 0,
+      });
+      
+      res.json(alert);
+    } catch (error) {
+      console.error("Create alert error:", error);
+      res.status(500).json({ message: "Failed to create alert" });
     }
   });
 

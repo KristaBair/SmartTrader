@@ -113,6 +113,39 @@ export const onboardingData = pgTable("onboarding_data", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const marketEvents = pgTable("market_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  eventType: text("event_type").notNull(), // 'regulatory', 'earnings', 'merger', 'lawsuit', etc.
+  affectedSymbol: text("affected_symbol"), // Stock symbol if specific to one company
+  tone: text("tone").notNull(), // 'positive', 'negative', 'neutral'
+  impactLevel: text("impact_level").notNull(), // 'low', 'medium', 'high'
+  confidence: integer("confidence").notNull(), // AI confidence score 1-100
+  sourceUrl: text("source_url"),
+  publishedAt: timestamp("published_at").notNull(),
+  analyzedAt: timestamp("analyzed_at").defaultNow(),
+  aiAnalysis: jsonb("ai_analysis").$type<{
+    reasoning: string;
+    priceImpactPrediction: string;
+    tradingRecommendation: 'BUY' | 'SELL' | 'HOLD' | 'WATCH';
+    keyFactors: string[];
+    riskLevel: string;
+  }>(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const userAlerts = pgTable("user_alerts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  marketEventId: varchar("market_event_id").notNull(),
+  alertType: text("alert_type").notNull(), // 'buy_opportunity', 'sell_opportunity', 'watch'
+  message: text("message").notNull(),
+  isRead: integer("is_read").default(0), // 0 = unread, 1 = read
+  sentAt: timestamp("sent_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertPortfolioSchema = createInsertSchema(portfolios).omit({
   id: true,
   createdAt: true,
@@ -140,6 +173,18 @@ export const insertOnboardingDataSchema = createInsertSchema(onboardingData).omi
   updatedAt: true,
 });
 
+export const insertMarketEventSchema = createInsertSchema(marketEvents).omit({
+  id: true,
+  analyzedAt: true,
+  createdAt: true,
+});
+
+export const insertUserAlertSchema = createInsertSchema(userAlerts).omit({
+  id: true,
+  sentAt: true,
+  createdAt: true,
+});
+
 export type Portfolio = typeof portfolios.$inferSelect;
 export type InsertPortfolio = z.infer<typeof insertPortfolioSchema>;
 export type Recommendation = typeof recommendations.$inferSelect;
@@ -150,6 +195,10 @@ export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type OnboardingData = typeof onboardingData.$inferSelect;
 export type InsertOnboardingData = z.infer<typeof insertOnboardingDataSchema>;
+export type MarketEvent = typeof marketEvents.$inferSelect;
+export type InsertMarketEvent = z.infer<typeof insertMarketEventSchema>;
+export type UserAlert = typeof userAlerts.$inferSelect;
+export type InsertUserAlert = z.infer<typeof insertUserAlertSchema>;
 export type User = typeof users.$inferSelect;
 export type UpsertUser = typeof users.$inferInsert;
 

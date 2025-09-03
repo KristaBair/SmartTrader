@@ -1,6 +1,6 @@
-import { type Portfolio, type InsertPortfolio, type Recommendation, type InsertRecommendation, type MarketData, type InsertMarketData, type Transaction, type InsertTransaction, type OnboardingData, type InsertOnboardingData, type User, type UpsertUser, users, portfolios, recommendations, marketData, transactions, onboardingData } from "@shared/schema";
+import { type Portfolio, type InsertPortfolio, type Recommendation, type InsertRecommendation, type MarketData, type InsertMarketData, type Transaction, type InsertTransaction, type OnboardingData, type InsertOnboardingData, type MarketEvent, type InsertMarketEvent, type UserAlert, type InsertUserAlert, type User, type UpsertUser, users, portfolios, recommendations, marketData, transactions, onboardingData, marketEvents, userAlerts } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -33,6 +33,18 @@ export interface IStorage {
   createOnboardingData(data: InsertOnboardingData): Promise<OnboardingData>;
   getOnboardingDataByUserId(userId: string): Promise<OnboardingData | undefined>;
   updateOnboardingData(id: string, data: Partial<InsertOnboardingData>): Promise<OnboardingData | undefined>;
+
+  // Market intelligence methods
+  createMarketEvent(event: InsertMarketEvent): Promise<MarketEvent>;
+  getMarketEvent(id: string): Promise<MarketEvent | undefined>;
+  getAllMarketEvents(): Promise<MarketEvent[]>;
+  getRecentMarketEvents(limit?: number): Promise<MarketEvent[]>;
+  
+  // User alert methods
+  createUserAlert(alert: InsertUserAlert): Promise<UserAlert>;
+  getUserAlerts(userId: string): Promise<UserAlert[]>;
+  getUnreadUserAlerts(userId: string): Promise<UserAlert[]>;
+  markAlertAsRead(alertId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -210,6 +222,73 @@ export class DatabaseStorage implements IStorage {
       .where(eq(onboardingData.id, id))
       .returning();
     return data;
+  }
+
+  // Market intelligence methods
+  async createMarketEvent(insertMarketEvent: InsertMarketEvent): Promise<MarketEvent> {
+    const [event] = await db
+      .insert(marketEvents)
+      .values(insertMarketEvent)
+      .returning();
+    return event;
+  }
+
+  async getMarketEvent(id: string): Promise<MarketEvent | undefined> {
+    const [event] = await db
+      .select()
+      .from(marketEvents)
+      .where(eq(marketEvents.id, id));
+    return event;
+  }
+
+  async getAllMarketEvents(): Promise<MarketEvent[]> {
+    return await db
+      .select()
+      .from(marketEvents)
+      .orderBy(desc(marketEvents.publishedAt));
+  }
+
+  async getRecentMarketEvents(limit: number = 50): Promise<MarketEvent[]> {
+    return await db
+      .select()
+      .from(marketEvents)
+      .orderBy(desc(marketEvents.publishedAt))
+      .limit(limit);
+  }
+
+  // User alert methods
+  async createUserAlert(insertUserAlert: InsertUserAlert): Promise<UserAlert> {
+    const [alert] = await db
+      .insert(userAlerts)
+      .values(insertUserAlert)
+      .returning();
+    return alert;
+  }
+
+  async getUserAlerts(userId: string): Promise<UserAlert[]> {
+    return await db
+      .select()
+      .from(userAlerts)
+      .where(eq(userAlerts.userId, userId))
+      .orderBy(userAlerts.sentAt);
+  }
+
+  async getUnreadUserAlerts(userId: string): Promise<UserAlert[]> {
+    return await db
+      .select()
+      .from(userAlerts)
+      .where(and(
+        eq(userAlerts.userId, userId),
+        eq(userAlerts.isRead, 0)
+      ))
+      .orderBy(desc(userAlerts.sentAt));
+  }
+
+  async markAlertAsRead(alertId: string): Promise<void> {
+    await db
+      .update(userAlerts)
+      .set({ isRead: 1 })
+      .where(eq(userAlerts.id, alertId));
   }
 }
 

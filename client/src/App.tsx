@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import Dashboard from "@/pages/dashboard";
 import Landing from "@/pages/landing";
 import { Onboarding } from "@/pages/onboarding";
+import MarketIntelligence from "@/pages/market-intelligence";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -55,6 +56,7 @@ function Router() {
     <Switch>
       <Route path="/" component={Dashboard} />
       <Route path="/onboarding" component={Onboarding} />
+      <Route path="/market-intelligence" component={MarketIntelligence} />
       <Route component={NotFound} />
     </Switch>
   );

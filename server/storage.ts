@@ -1,4 +1,4 @@
-import { type Portfolio, type InsertPortfolio, type Recommendation, type InsertRecommendation, type MarketData, type InsertMarketData } from "@shared/schema";
+import { type Portfolio, type InsertPortfolio, type Recommendation, type InsertRecommendation, type MarketData, type InsertMarketData, type Transaction, type InsertTransaction } from "@shared/schema";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
@@ -17,17 +17,24 @@ export interface IStorage {
   upsertMarketData(marketData: InsertMarketData): Promise<MarketData>;
   getMarketData(symbol: string): Promise<MarketData | undefined>;
   getAllMarketData(): Promise<MarketData[]>;
+
+  // Transaction methods
+  createTransaction(transaction: InsertTransaction): Promise<Transaction>;
+  getTransactionsByPortfolio(portfolioId: string): Promise<Transaction[]>;
+  getTransactionsByUser(userId: string): Promise<Transaction[]>;
 }
 
 export class MemStorage implements IStorage {
   private portfolios: Map<string, Portfolio>;
   private recommendations: Map<string, Recommendation>;
   private marketData: Map<string, MarketData>;
+  private transactions: Map<string, Transaction>;
 
   constructor() {
     this.portfolios = new Map();
     this.recommendations = new Map();
     this.marketData = new Map();
+    this.transactions = new Map();
     
     // Initialize with mock market data
     this.initializeMarketData();
@@ -61,7 +68,7 @@ export class MemStorage implements IStorage {
       id,
       createdAt: new Date(),
       updatedAt: new Date(),
-    };
+    } as Portfolio;
     this.portfolios.set(id, portfolio);
     return portfolio;
   }
@@ -84,7 +91,7 @@ export class MemStorage implements IStorage {
       ...existing,
       ...updates,
       updatedAt: new Date(),
-    };
+    } as Portfolio;
     this.portfolios.set(id, updated);
     return updated;
   }
@@ -95,6 +102,10 @@ export class MemStorage implements IStorage {
       ...insertRecommendation,
       id,
       createdAt: new Date(),
+      targetPrice: insertRecommendation.targetPrice || null,
+      currentPrice: insertRecommendation.currentPrice || null,
+      expectedReturn: insertRecommendation.expectedReturn || null,
+      recommendedAmount: insertRecommendation.recommendedAmount || null,
     };
     this.recommendations.set(id, recommendation);
     return recommendation;
@@ -133,6 +144,32 @@ export class MemStorage implements IStorage {
 
   async getAllMarketData(): Promise<MarketData[]> {
     return Array.from(this.marketData.values());
+  }
+
+  // Transaction methods
+  async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
+    const id = randomUUID();
+    const transaction: Transaction = {
+      ...insertTransaction,
+      id,
+      createdAt: new Date(),
+      fees: insertTransaction.fees || null,
+      notes: insertTransaction.notes || null,
+    };
+    this.transactions.set(id, transaction);
+    return transaction;
+  }
+
+  async getTransactionsByPortfolio(portfolioId: string): Promise<Transaction[]> {
+    return Array.from(this.transactions.values()).filter(
+      (transaction) => transaction.portfolioId === portfolioId,
+    ).sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
+  }
+
+  async getTransactionsByUser(userId: string): Promise<Transaction[]> {
+    return Array.from(this.transactions.values()).filter(
+      (transaction) => transaction.userId === userId,
+    ).sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
   }
 }
 

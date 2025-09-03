@@ -32,6 +32,8 @@ export default function PortfolioInput({ onSubmit, isLoading, portfolio }: Portf
     defaultValues: {
       cash: "",
       investments: "",
+      initialInvestment: "",
+      monthlyContribution: "",
       riskTolerance: "Moderate",
       timeline: "Medium-term (1-5 years)",
     },
@@ -47,6 +49,8 @@ export default function PortfolioInput({ onSubmit, isLoading, portfolio }: Portf
       form.reset({
         cash: portfolio.cash,
         investments: investmentsText,
+        initialInvestment: portfolio.initialInvestment || "",
+        monthlyContribution: portfolio.monthlyContribution || "",
         riskTolerance: portfolio.riskTolerance as any,
         timeline: portfolio.timeline as any,
       });
@@ -124,6 +128,52 @@ export default function PortfolioInput({ onSubmit, isLoading, portfolio }: Portf
                         placeholder="10,000"
                         className="pl-8"
                         data-testid="input-cash"
+                      />
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="initialInvestment"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Initial Investment</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                      <Input
+                        {...field}
+                        type="number"
+                        placeholder="50,000"
+                        className="pl-8"
+                        data-testid="input-initial-investment"
+                      />
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="monthlyContribution"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Monthly Contribution</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                      <Input
+                        {...field}
+                        type="number"
+                        placeholder="1,000"
+                        className="pl-8"
+                        data-testid="input-monthly-contribution"
                       />
                     </div>
                   </FormControl>

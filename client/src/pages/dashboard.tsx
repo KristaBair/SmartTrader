@@ -1,16 +1,20 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import PortfolioInput from "@/components/portfolio-input";
 import AIRecommendations from "@/components/ai-recommendations";
 import MarketTrends from "@/components/market-trends";
 import PortfolioOverview from "@/components/portfolio-overview";
+import TransactionHistory from "@/components/transaction-history";
+import PortfolioGrowthChart from "@/components/portfolio-growth-chart";
 import { useToast } from "@/hooks/use-toast";
-import { Bell } from "lucide-react";
+import { Bell, RefreshCw } from "lucide-react";
 import type { Portfolio, Recommendation } from "@shared/schema";
 
 export default function Dashboard() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -48,6 +52,45 @@ export default function Dashboard() {
     },
   });
 
+  // Auto-refresh functionality
+  const refreshData = async (showToast = false) => {
+    try {
+      setIsAutoRefreshing(true);
+      
+      // Refresh all data
+      await queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/market-data"] });
+      
+      setLastRefresh(new Date());
+      
+      if (showToast) {
+        toast({
+          title: "Data Refreshed",
+          description: "Portfolio and market data have been updated.",
+        });
+      }
+    } catch (error) {
+      if (showToast) {
+        toast({
+          title: "Refresh Failed",
+          description: "Unable to refresh data. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setIsAutoRefreshing(false);
+    }
+  };
+
+  // Auto-refresh every 5 minutes
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      refreshData();
+    }, 5 * 60 * 1000); // 5 minutes
+
+    return () => clearInterval(intervalId);
+  }, [queryClient]);
+
   const handlePortfolioSubmit = async (portfolioData: any) => {
     try {
       setIsAnalyzing(true);
@@ -61,6 +104,9 @@ export default function Dashboard() {
       
       // Analyze the portfolio
       await analyzePortfolioMutation.mutateAsync(newPortfolio.id);
+      
+      // Force refresh after trade
+      refreshData();
     } catch (error) {
       toast({
         title: "Error",
@@ -85,6 +131,25 @@ export default function Dashboard() {
               <h1 className="text-2xl font-bold text-gray-900">SmartTrader</h1>
             </div>
             <div className="flex items-center space-x-4">
+              {/* Auto-refresh status */}
+              <div className="flex items-center space-x-2 text-sm text-gray-500">
+                <RefreshCw className={`h-4 w-4 ${isAutoRefreshing ? 'animate-spin' : ''}`} />
+                <span data-testid="text-last-refresh">
+                  Last updated: {lastRefresh.toLocaleTimeString()}
+                </span>
+              </div>
+              
+              {/* Manual refresh button */}
+              <button 
+                onClick={() => refreshData(true)}
+                disabled={isAutoRefreshing}
+                className="text-gray-600 hover:text-gray-900 transition-colors disabled:opacity-50"
+                data-testid="button-refresh"
+                title="Refresh data now"
+              >
+                <RefreshCw className={`h-5 w-5 ${isAutoRefreshing ? 'animate-spin' : ''}`} />
+              </button>
+              
               <button 
                 className="text-gray-600 hover:text-gray-900 transition-colors"
                 data-testid="button-notifications"
@@ -127,9 +192,19 @@ export default function Dashboard() {
             
             <MarketTrends />
             
+            <PortfolioGrowthChart 
+              portfolio={portfolio}
+              isLoading={portfolioLoading}
+            />
+            
             <PortfolioOverview 
               portfolio={portfolio}
               isLoading={portfolioLoading}
+            />
+            
+            <TransactionHistory 
+              portfolioId={portfolio?.id}
+              userId="default-user"
             />
           </div>
         </div>

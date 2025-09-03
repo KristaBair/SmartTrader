@@ -74,6 +74,9 @@ export default function PortfolioOverview({ portfolio, isLoading }: PortfolioOve
   const totalInvestmentValue = portfolio.investments.reduce((sum, inv) => sum + inv.currentValue, 0);
   const cash = parseFloat(portfolio.cash);
   const totalPortfolioValue = totalInvestmentValue + cash;
+  const initialInvestment = parseFloat(portfolio.initialInvestment || '0');
+  const monthlyContribution = parseFloat(portfolio.monthlyContribution || '0');
+  const totalContributions = parseFloat(portfolio.totalContributions || '0');
   
   // Mock calculations for gain/loss (in a real app, this would be calculated based on purchase prices)
   const mockInitialValue = totalInvestmentValue * 0.9; // Assume 10% gain for demo
@@ -132,6 +135,33 @@ export default function PortfolioOverview({ portfolio, isLoading }: PortfolioOve
                   ${cash.toLocaleString()}
                 </span>
               </div>
+              
+              {initialInvestment > 0 && (
+                <div className="flex justify-between items-center p-4 bg-purple-50 rounded-lg" data-testid="initial-investment">
+                  <span className="text-purple-700">Initial Investment</span>
+                  <span className="text-lg font-semibold text-purple-900 font-mono">
+                    ${initialInvestment.toLocaleString()}
+                  </span>
+                </div>
+              )}
+              
+              {monthlyContribution > 0 && (
+                <div className="flex justify-between items-center p-4 bg-indigo-50 rounded-lg" data-testid="monthly-contribution">
+                  <span className="text-indigo-700">Monthly Contribution</span>
+                  <span className="text-lg font-semibold text-indigo-900 font-mono">
+                    ${monthlyContribution.toLocaleString()}/month
+                  </span>
+                </div>
+              )}
+              
+              {totalContributions > 0 && (
+                <div className="flex justify-between items-center p-4 bg-teal-50 rounded-lg" data-testid="total-contributions">
+                  <span className="text-teal-700">Total Contributions</span>
+                  <span className="text-lg font-semibold text-teal-900 font-mono">
+                    ${totalContributions.toLocaleString()}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 

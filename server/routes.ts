@@ -27,6 +27,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: "default-user", // In a real app, this would come from authentication
         cash: validatedData.cash,
         investments: investmentEntries,
+        initialInvestment: validatedData.initialInvestment || "0",
+        monthlyContribution: validatedData.monthlyContribution || "0",
+        totalContributions: validatedData.initialInvestment || "0",
         riskTolerance: validatedData.riskTolerance,
         timeline: validatedData.timeline,
       };
@@ -168,6 +171,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Market data fetch error:", error);
       res.status(500).json({ message: "Failed to fetch market data" });
+    }
+  });
+
+  // Transaction routes
+  app.post("/api/transactions", async (req, res) => {
+    try {
+      const { portfolioId, userId, symbol, name, action, quantity, price, totalAmount, fees, notes } = req.body;
+      
+      if (!portfolioId || !userId || !symbol || !name || !action || !quantity || !price || !totalAmount) {
+        res.status(400).json({ message: "Missing required transaction fields" });
+        return;
+      }
+
+      const transaction = await storage.createTransaction({
+        portfolioId,
+        userId,
+        symbol,
+        name,
+        action,
+        quantity: quantity.toString(),
+        price: price.toString(),
+        totalAmount: totalAmount.toString(),
+        fees: fees?.toString(),
+        notes,
+      });
+
+      res.json(transaction);
+    } catch (error) {
+      console.error("Transaction creation error:", error);
+      res.status(500).json({ message: "Failed to create transaction" });
+    }
+  });
+
+  app.get("/api/portfolios/:id/transactions", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const transactions = await storage.getTransactionsByPortfolio(id);
+      res.json(transactions);
+    } catch (error) {
+      console.error("Transactions fetch error:", error);
+      res.status(500).json({ message: "Failed to fetch transactions" });
+    }
+  });
+
+  app.get("/api/users/:userId/transactions", async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const transactions = await storage.getTransactionsByUser(userId);
+      res.json(transactions);
+    } catch (error) {
+      console.error("User transactions fetch error:", error);
+      res.status(500).json({ message: "Failed to fetch user transactions" });
     }
   });
 

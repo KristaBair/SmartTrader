@@ -418,17 +418,22 @@ If you cannot find specific information, leave those fields empty. Focus on accu
   // Financial Chat API for onboarding
   app.post("/api/financial-chat", async (req, res) => {
     try {
-      const { message, chatHistory, savingsAmount } = req.body;
+      const { message, chatHistory, savingsAmount, contributionFrequency, contributionAmount } = req.body;
       
-      const systemPrompt = `You are a helpful financial advisor AI assistant. The user has $${savingsAmount} in savings and wants to start investing. 
+      const contributionInfo = contributionFrequency && contributionAmount ? 
+        ` They plan to contribute $${contributionAmount} ${contributionFrequency} to their investments.` : 
+        '';
+      
+      const systemPrompt = `You are a helpful financial advisor AI assistant. The user has $${savingsAmount} in savings and wants to start investing.${contributionInfo}
 
 Your job is to:
 1. Ask questions about their financial goals, timeline, risk tolerance, and current financial situation
 2. Be conversational and friendly
-3. Once you have enough information about their goals and risk tolerance, set readyForSuggestions to true
-4. Keep responses concise but informative
+3. Consider their planned contribution schedule when discussing investment strategies
+4. Once you have enough information about their goals and risk tolerance, set readyForSuggestions to true
+5. Keep responses concise but informative
 
-Current conversation context: The user has ${savingsAmount} in savings and is new to investing.`;
+Current conversation context: The user has $${savingsAmount} in savings and is new to investing.${contributionInfo}`;
 
       // Build messages array for OpenAI
       const messages = [
@@ -467,7 +472,7 @@ Current conversation context: The user has ${savingsAmount} in savings and is ne
   // Generate Investment Suggestions API
   app.post("/api/generate-investment-suggestions", async (req, res) => {
     try {
-      const { savingsAmount, chatHistory } = req.body;
+      const { savingsAmount, chatHistory, contributionFrequency, contributionAmount } = req.body;
       
       // Extract goals and preferences from chat history
       const conversationSummary = chatHistory
@@ -475,15 +480,20 @@ Current conversation context: The user has ${savingsAmount} in savings and is ne
         .map((msg: any) => msg.content)
         .join(" ");
 
+      const contributionInfo = contributionFrequency && contributionAmount ? 
+        `\nRegular contributions: $${contributionAmount} ${contributionFrequency}` : 
+        '';
+
       const suggestionPrompt = `Based on this user's conversation and financial situation, create a personalized investment plan.
 
-User has: $${savingsAmount} in savings
+User has: $${savingsAmount} in savings${contributionInfo}
 Conversation summary: ${conversationSummary}
 
 Create a JSON response with investment recommendations that include:
 1. An emergency fund (3-6 months expenses)
 2. Diversified investment allocation based on their goals and risk tolerance
-3. Specific categories like: Emergency Fund, Index Funds, Bonds, Individual Stocks, etc.
+3. Consider their regular contribution schedule for dollar-cost averaging strategies
+4. Specific categories like: Emergency Fund, Index Funds, Bonds, Individual Stocks, etc.
 
 Format as JSON:
 {
@@ -495,11 +505,11 @@ Format as JSON:
       "explanation": "string explaining why this allocation"
     }
   ],
-  "overallStrategy": "string explaining the overall approach",
-  "nextSteps": ["array of action items"]
+  "overallStrategy": "string explaining the overall approach and how to use regular contributions",
+  "nextSteps": ["array of action items including how to set up automatic investing"]
 }
 
-Make suggestions realistic and appropriate for a beginner investor.`;
+Make suggestions realistic and appropriate for a beginner investor. If they have regular contributions planned, emphasize dollar-cost averaging and automatic investment strategies.`;
 
       const response = await openai.chat.completions.create({
         model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user

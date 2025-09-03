@@ -92,6 +92,8 @@ export const onboardingData = pgTable("onboarding_data", {
   userId: varchar("user_id").notNull(),
   onboardingType: text("onboarding_type").notNull(), // 'portfolio' or 'savings'
   savingsAmount: decimal("savings_amount", { precision: 12, scale: 2 }),
+  contributionFrequency: text("contribution_frequency"), // 'weekly', 'biweekly', 'monthly'
+  contributionAmount: decimal("contribution_amount", { precision: 12, scale: 2 }),
   chatHistory: jsonb("chat_history").$type<Array<{
     role: string;
     content: string;
@@ -155,6 +157,7 @@ export type UpsertUser = typeof users.$inferInsert;
 export type RiskTolerance = "Conservative" | "Moderate" | "Aggressive";
 export type Timeline = "Short-term (< 1 year)" | "Medium-term (1-5 years)" | "Long-term (5+ years)";
 export type Action = "BUY" | "SELL";
+export type ContributionFrequency = "weekly" | "biweekly" | "monthly";
 
 export const portfolioFormSchema = insertPortfolioSchema.extend({
   cash: z.string().min(1, "Cash amount is required"),

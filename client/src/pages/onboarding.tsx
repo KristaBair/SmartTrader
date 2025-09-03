@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { 
   PiggyBank, 
@@ -17,6 +18,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import type { ContributionFrequency } from "@shared/schema";
 
 type OnboardingStep = "choice" | "savings" | "chat" | "suggestions";
 
@@ -29,6 +31,8 @@ export function Onboarding() {
   const [, navigate] = useLocation();
   const [step, setStep] = useState<OnboardingStep>("choice");
   const [savingsAmount, setSavingsAmount] = useState("");
+  const [contributionFrequency, setContributionFrequency] = useState<ContributionFrequency>("monthly");
+  const [contributionAmount, setContributionAmount] = useState("");
   const [financialGoals, setFinancialGoals] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
@@ -81,7 +85,9 @@ export function Onboarding() {
       const response = await apiRequest("POST", "/api/financial-chat", {
         message: userMessage,
         chatHistory: chatMessages,
-        savingsAmount: parseFloat(savingsAmount)
+        savingsAmount: parseFloat(savingsAmount),
+        contributionFrequency,
+        contributionAmount: parseFloat(contributionAmount)
       });
 
       const responseData = await response.json();
@@ -106,6 +112,8 @@ export function Onboarding() {
     try {
       const response = await apiRequest("POST", "/api/generate-investment-suggestions", {
         savingsAmount: parseFloat(savingsAmount),
+        contributionFrequency,
+        contributionAmount: parseFloat(contributionAmount),
         chatHistory: chatMessages
       });
       const responseData = await response.json();
@@ -125,6 +133,8 @@ export function Onboarding() {
       await apiRequest("POST", "/api/onboarding", {
         onboardingType: "savings",
         savingsAmount: parseFloat(savingsAmount),
+        contributionFrequency,
+        contributionAmount: parseFloat(contributionAmount),
         chatHistory: chatMessages,
         investmentSuggestions: suggestions,
         completed: new Date()
@@ -213,6 +223,36 @@ export function Onboarding() {
                   value={savingsAmount}
                   onChange={(e) => setSavingsAmount(e.target.value)}
                   data-testid="input-savings-amount"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="frequency">How often do you plan on adding money?</Label>
+              <Select value={contributionFrequency} onValueChange={(value: ContributionFrequency) => setContributionFrequency(value)}>
+                <SelectTrigger className="mt-2" data-testid="select-contribution-frequency">
+                  <SelectValue placeholder="Select frequency" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="biweekly">Biweekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="contributionAmount">How much do you plan to add?</Label>
+              <div className="relative mt-2">
+                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                <Input
+                  id="contributionAmount"
+                  type="number"
+                  placeholder="500"
+                  className="pl-8"
+                  value={contributionAmount}
+                  onChange={(e) => setContributionAmount(e.target.value)}
+                  data-testid="input-contribution-amount"
                 />
               </div>
             </div>

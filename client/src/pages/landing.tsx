@@ -65,18 +65,38 @@ export default function Landing() {
             <CardHeader>
               <CardTitle className="text-2xl">Ready to optimize your investments?</CardTitle>
               <CardDescription>
-                Sign in to start analyzing your portfolio with AI-powered insights
+                Sign in to save your portfolio data or try as a guest
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <Button 
                 size="lg" 
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white w-full"
                 onClick={() => window.location.href = "/api/login"}
                 data-testid="button-signin"
               >
                 Sign In with Replit
               </Button>
+              <div className="flex items-center">
+                <div className="flex-1 border-t border-gray-300"></div>
+                <span className="px-3 text-sm text-gray-500">or</span>
+                <div className="flex-1 border-t border-gray-300"></div>
+              </div>
+              <Button 
+                size="lg" 
+                variant="outline"
+                className="border-gray-300 hover:bg-gray-50 w-full"
+                onClick={() => {
+                  localStorage.setItem('guestMode', 'true');
+                  window.location.reload();
+                }}
+                data-testid="button-guest"
+              >
+                Try as Guest
+              </Button>
+              <p className="text-xs text-gray-500 mt-2">
+                Guest mode: Portfolio data won't be saved between sessions
+              </p>
             </CardContent>
           </Card>
         </div>

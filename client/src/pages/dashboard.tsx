@@ -19,21 +19,40 @@ export default function Dashboard() {
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const { toast } = useToast();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isGuestMode } = useAuth();
   const queryClient = useQueryClient();
 
+  // Guest portfolio state
+  const [guestPortfolio, setGuestPortfolio] = useState<Portfolio | null>(null);
+
+  useEffect(() => {
+    if (isGuestMode) {
+      const savedPortfolio = localStorage.getItem('guestPortfolio');
+      if (savedPortfolio) {
+        setGuestPortfolio(JSON.parse(savedPortfolio));
+      }
+    }
+  }, [isGuestMode]);
+
   // Fetch user portfolio
-  const { data: portfolio, isLoading: portfolioLoading } = useQuery<Portfolio>({
+  const { data: apiPortfolio, isLoading: portfolioLoading } = useQuery<Portfolio>({
     queryKey: ["/api/portfolios/user", user?.id],
     retry: false,
-    enabled: !!user?.id,
+    enabled: !isGuestMode && !!user?.id,
   });
 
-  // Fetch recommendations if portfolio exists
-  const { data: recommendations = [], isLoading: recommendationsLoading } = useQuery<Recommendation[]>({
+  const portfolio = isGuestMode ? guestPortfolio : apiPortfolio;
+
+  // Guest recommendations state
+  const [guestRecommendations, setGuestRecommendations] = useState<Recommendation[]>([]);
+
+  // Fetch recommendations if portfolio exists (only for authenticated users)
+  const { data: apiRecommendations = [], isLoading: recommendationsLoading } = useQuery<Recommendation[]>({
     queryKey: ["/api/portfolios", portfolio?.id, "recommendations"],
-    enabled: !!portfolio?.id,
+    enabled: !isGuestMode && !!portfolio?.id,
   });
+
+  const recommendations = isGuestMode ? guestRecommendations : apiRecommendations;
 
   // Analyze portfolio mutation
   const analyzePortfolioMutation = useMutation({
@@ -100,18 +119,88 @@ export default function Dashboard() {
     try {
       setIsAnalyzing(true);
       
-      // Create or update portfolio
-      const response = await apiRequest("POST", "/api/portfolios", portfolioData);
-      const newPortfolio = await response.json();
-      
-      // Invalidate and refetch portfolio data
-      await queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
-      
-      // Analyze the portfolio
-      await analyzePortfolioMutation.mutateAsync(newPortfolio.id);
-      
-      // Force refresh after trade
-      refreshData();
+      if (isGuestMode) {
+        // Handle guest mode portfolio
+        const investmentEntries = portfolioData.investments.split(',').map((entry: string) => {
+          const [symbol, amount] = entry.trim().split(':');
+          return {
+            symbol: symbol?.trim() || '',
+            name: symbol?.trim() || '',
+            amount: parseFloat(amount?.replace(/[$,\s]/g, '') || '0'),
+            currentValue: parseFloat(amount?.replace(/[$,\s]/g, '') || '0'),
+          };
+        }).filter((entry: any) => entry.symbol && entry.amount > 0);
+
+        const mockPortfolio: Portfolio = {
+          id: 'guest-portfolio',
+          userId: 'guest-user',
+          cash: portfolioData.cash,
+          investments: investmentEntries,
+          initialInvestment: portfolioData.initialInvestment || "0",
+          monthlyContribution: portfolioData.monthlyContribution || "0",
+          totalContributions: portfolioData.initialInvestment || "0",
+          riskTolerance: portfolioData.riskTolerance,
+          timeline: portfolioData.timeline,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        // Save to localStorage
+        localStorage.setItem('guestPortfolio', JSON.stringify(mockPortfolio));
+        setGuestPortfolio(mockPortfolio);
+
+        // Mock recommendations for guest users
+        const mockRecommendations: Recommendation[] = [
+          {
+            id: 'guest-rec-1',
+            portfolioId: 'guest-portfolio',
+            symbol: 'SPY',
+            name: 'SPDR S&P 500 ETF',
+            action: 'BUY',
+            confidence: 0.85,
+            reasoning: 'Broad market exposure with low fees. Good foundation for any portfolio.',
+            targetPrice: '500.00',
+            currentPrice: '480.00',
+            expectedReturn: '8.5',
+            recommendedAmount: '1000.00',
+            createdAt: new Date(),
+          },
+          {
+            id: 'guest-rec-2',
+            portfolioId: 'guest-portfolio',
+            symbol: 'VTI',
+            name: 'Vanguard Total Stock Market ETF',
+            action: 'BUY',
+            confidence: 0.80,
+            reasoning: 'Diversified exposure to entire US stock market.',
+            targetPrice: '250.00',
+            currentPrice: '240.00',
+            expectedReturn: '7.8',
+            recommendedAmount: '800.00',
+            createdAt: new Date(),
+          },
+        ];
+
+        setGuestRecommendations(mockRecommendations);
+
+        toast({
+          title: "Portfolio Updated",
+          description: "Your guest portfolio has been updated with sample recommendations.",
+        });
+      } else {
+        // Create or update portfolio for authenticated users
+        const response = await apiRequest("POST", "/api/portfolios", portfolioData);
+        const newPortfolio = await response.json();
+        
+        // Invalidate and refetch portfolio data
+        await queryClient.invalidateQueries({ queryKey: ["/api/portfolios"] });
+        
+        // Analyze the portfolio
+        await analyzePortfolioMutation.mutateAsync(newPortfolio.id);
+        
+        // Force refresh after trade
+        refreshData();
+      }
     } catch (error) {
       toast({
         title: "Error",
@@ -165,39 +254,105 @@ export default function Dashboard() {
               {/* User Profile & Logout */}
               <div className="flex items-center space-x-3">
                 <div className="flex items-center space-x-2">
-                  <img 
-                    src={user?.profileImageUrl || undefined} 
-                    alt="Profile"
-                    className="w-8 h-8 rounded-full object-cover"
-                    data-testid="img-avatar"
-                  />
+                  {user?.profileImageUrl ? (
+                    <img 
+                      src={user.profileImageUrl} 
+                      alt="Profile"
+                      className="w-8 h-8 rounded-full object-cover"
+                      data-testid="img-avatar"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
+                      <User className="h-4 w-4 text-gray-600" />
+                    </div>
+                  )}
                   <span className="text-sm text-gray-700 hidden sm:block" data-testid="text-username">
                     {user?.firstName || user?.email || "User"}
                   </span>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => window.location.href = "/api/logout"}
-                  className="text-gray-600 hover:text-gray-900"
-                  data-testid="button-logout"
-                >
-                  <LogOut className="h-4 w-4" />
-                </Button>
+                {isGuestMode ? (
+                  <Button
+                    size="sm"
+                    onClick={() => window.location.href = "/api/login"}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    data-testid="button-signin"
+                  >
+                    Sign In
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => window.location.href = "/api/logout"}
+                    className="text-gray-600 hover:text-gray-900"
+                    data-testid="button-logout"
+                  >
+                    <LogOut className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </div>
           </div>
         </div>
       </header>
 
+      {/* Guest Mode Banner */}
+      {isGuestMode && (
+        <div className="bg-blue-50 border-b border-blue-200" data-testid="guest-mode-banner">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                  <User className="h-4 w-4 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-blue-800 font-medium">
+                    You're using SmartTrader as a guest
+                  </p>
+                  <p className="text-xs text-blue-600">
+                    Your portfolio data won't be saved when you leave. Sign in to keep your data.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Button
+                  size="sm"
+                  onClick={() => window.location.href = "/api/login"}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  data-testid="button-banner-signin"
+                >
+                  Sign In to Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    localStorage.removeItem('guestMode');
+                    localStorage.removeItem('guestPortfolio');
+                    window.location.reload();
+                  }}
+                  className="text-blue-600 hover:text-blue-800"
+                  data-testid="button-exit-guest"
+                >
+                  Exit Guest Mode
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-900 mb-2" data-testid="text-welcome">
-            Welcome back, <span className="text-primary">{user?.firstName || user?.email || "Trader"}</span>
+            {isGuestMode ? "Welcome to SmartTrader" : `Welcome back, ${user?.firstName || user?.email || "Trader"}`}
           </h2>
           <p className="text-gray-600" data-testid="text-subtitle">
-            Let's optimize your investment strategy with AI-powered insights
+            {isGuestMode 
+              ? "Try our AI-powered investment recommendations with sample data" 
+              : "Let's optimize your investment strategy with AI-powered insights"
+            }
           </p>
         </div>
 
@@ -230,10 +385,12 @@ export default function Dashboard() {
               isLoading={portfolioLoading}
             />
             
-            <TransactionHistory 
-              portfolioId={portfolio?.id}
-              userId={user?.id}
-            />
+            {!isGuestMode && (
+              <TransactionHistory 
+                portfolioId={portfolio?.id}
+                userId={user?.id}
+              />
+            )}
           </div>
         </div>
 

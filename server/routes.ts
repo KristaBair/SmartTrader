@@ -488,36 +488,59 @@ Current conversation context: The user has $${savingsAmount} in savings and is n
           : `\nRegular contributions: $${contributionAmount} ${contributionFrequency}`
         ) : '';
 
-      const suggestionPrompt = `Based on this user's conversation and financial situation, create a personalized investment plan.
+      const suggestionPrompt = `Based on this user's conversation and financial situation, create a specific investment plan with exact stock/ETF recommendations.
 
 User has: $${savingsAmount} in savings${contributionInfo}
 Conversation summary: ${conversationSummary}
 
-Create a JSON response with investment recommendations that include:
-1. An emergency fund (3-6 months expenses)
-2. Diversified investment allocation based on their goals and risk tolerance
-3. ${contributionFrequency === 'irregular' 
-    ? 'Consider their flexible contribution approach - suggest simple, accessible investments they can easily add to when they have extra money'
-    : 'Consider their regular contribution schedule for dollar-cost averaging strategies'}
-4. Specific categories like: Emergency Fund, Index Funds, Bonds, Individual Stocks, etc.
+Create a JSON response with SPECIFIC stock and ETF recommendations that include:
+1. Emergency fund allocation 
+2. Specific stocks and ETFs to buy with ticker symbols
+3. Exact dollar amounts to invest in each
+4. ${contributionFrequency === 'irregular' 
+    ? 'Simple, accessible investments for flexible contributions'
+    : 'Dollar-cost averaging strategy for regular contributions'}
 
 Format as JSON:
 {
   "recommendations": [
     {
       "category": "Emergency Fund",
+      "ticker": "HYSA",
+      "name": "High-Yield Savings Account",
       "suggestedAmount": number,
       "percentage": number,
-      "explanation": "string explaining why this allocation"
+      "explanation": "string explaining why this allocation",
+      "action": "ALLOCATE"
+    },
+    {
+      "category": "Index Fund",
+      "ticker": "SPY",
+      "name": "SPDR S&P 500 ETF",
+      "suggestedAmount": number,
+      "percentage": number,
+      "explanation": "string explaining why this stock/ETF",
+      "action": "BUY"
     }
   ],
   "overallStrategy": "string explaining the overall approach${contributionFrequency === 'irregular' ? ' for irregular contributions' : ' and how to use regular contributions'}",
-  "nextSteps": ["array of action items${contributionFrequency === 'irregular' ? '' : ' including how to set up automatic investing'}"]
+  "nextSteps": ["array of specific action items with broker recommendations${contributionFrequency === 'irregular' ? '' : ' including how to set up automatic investing'}"]
 }
 
-Make suggestions realistic and appropriate for a beginner investor. ${contributionFrequency === 'irregular' 
-  ? 'For irregular contributors, focus on simple, flexible investments they can easily add to when they have extra money.'
-  : 'If they have regular contributions planned, emphasize dollar-cost averaging and automatic investment strategies.'}`;
+IMPORTANT REQUIREMENTS:
+- Include specific ticker symbols (SPY, QQQ, VTI, AAPL, MSFT, etc.)
+- Provide exact dollar amounts to invest in each
+- Mix of ETFs for diversification and individual stocks for growth
+- Consider current market conditions and popular beginner-friendly investments
+- Include at least 3-5 specific investment recommendations
+- Make sure all amounts add up to their total savings amount
+
+Popular beginner investments to consider:
+- SPY (S&P 500), QQQ (Nasdaq), VTI (Total Stock Market)
+- Individual stocks: AAPL, MSFT, GOOGL, AMZN, TSLA
+- Bond ETFs: BND, TLT for conservative allocation
+
+Make suggestions realistic and actionable with specific buy orders they can place.`;
 
       const response = await openai.chat.completions.create({
         model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user

@@ -359,19 +359,37 @@ export function Onboarding() {
 
           <div className="grid gap-6">
             {suggestions.recommendations?.map((rec: any, index: number) => (
-              <Card key={index}>
+              <Card key={index} className={`border-l-4 ${rec.action === 'BUY' ? 'border-l-green-500' : 'border-l-blue-500'}`}>
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between">
-                    <span>{rec.category}</span>
-                    <span className="text-green-600 font-bold">
-                      ${rec.suggestedAmount.toLocaleString()}
-                    </span>
+                    <div>
+                      <span className="text-lg">{rec.name || rec.category}</span>
+                      {rec.ticker && rec.ticker !== 'HYSA' && (
+                        <div className="text-sm text-gray-500 font-mono mt-1">{rec.ticker}</div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <span className="text-green-600 font-bold text-xl">
+                        ${rec.suggestedAmount.toLocaleString()}
+                      </span>
+                      <div className={`text-xs px-2 py-1 rounded mt-1 ${
+                        rec.action === 'BUY' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
+                      }`}>
+                        {rec.action || 'INVEST'}
+                      </div>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
+                  {rec.ticker && rec.action === 'BUY' && (
+                    <div className="bg-green-50 border border-green-200 p-3 rounded mb-3">
+                      <p className="text-sm font-medium text-green-800">🚀 Ready to Buy:</p>
+                      <p className="font-mono text-green-700">BUY {rec.ticker} - ${rec.suggestedAmount.toLocaleString()}</p>
+                    </div>
+                  )}
                   <p className="text-gray-600 mb-2">{rec.explanation}</p>
-                  <div className="text-sm text-blue-600">
-                    {rec.percentage}% of your savings
+                  <div className="text-sm text-blue-600 font-medium">
+                    {rec.percentage}% of your total savings
                   </div>
                 </CardContent>
               </Card>

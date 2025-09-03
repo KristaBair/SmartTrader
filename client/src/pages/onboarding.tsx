@@ -103,6 +103,8 @@ export function Onboarding() {
         description: "Please try again",
         variant: "destructive"
       });
+      // Restore the message if API call failed
+      setCurrentMessage(userMessage);
     } finally {
       setIsTyping(false);
     }

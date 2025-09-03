@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Brain, Upload, Image, X, Loader2 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PlusCircle, Brain, Upload, Image, X, Loader2, Edit, Camera } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState, useCallback } from "react";
 
@@ -213,8 +214,22 @@ export default function PortfolioInput({ onSubmit, isLoading, portfolio }: Portf
         </CardTitle>
       </CardHeader>
       <CardContent>
-        {/* Image Upload Section */}
-        <div className="mb-6 p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
+        {/* Manual vs Automatic Input Tabs */}
+        <Tabs defaultValue="manual" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="manual" className="flex items-center gap-2">
+              <Edit className="h-4 w-4" />
+              Manual Entry
+            </TabsTrigger>
+            <TabsTrigger value="automatic" className="flex items-center gap-2">
+              <Camera className="h-4 w-4" />
+              Upload Screenshot
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="automatic" className="mt-6">
+            {/* Image Upload Section */}
+            <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
           <div className="text-center">
             <Upload className="mx-auto h-8 w-8 text-gray-400 mb-2" />
             <h3 className="text-sm font-medium text-gray-900 mb-1">
@@ -288,8 +303,10 @@ export default function PortfolioInput({ onSubmit, isLoading, portfolio }: Portf
             )}
           </div>
         </div>
-
-        <Form {...form}>
+          </TabsContent>
+          
+          <TabsContent value="manual" className="mt-6">
+            <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
             <FormField
               control={form.control}
@@ -437,6 +454,8 @@ export default function PortfolioInput({ onSubmit, isLoading, portfolio }: Portf
             </Button>
           </form>
         </Form>
+          </TabsContent>
+        </Tabs>
 
         {/* Risk Assessment Display */}
         {riskAssessment && (

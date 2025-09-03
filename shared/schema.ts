@@ -157,7 +157,7 @@ export type UpsertUser = typeof users.$inferInsert;
 export type RiskTolerance = "Conservative" | "Moderate" | "Aggressive";
 export type Timeline = "Short-term (< 1 year)" | "Medium-term (1-5 years)" | "Long-term (5+ years)";
 export type Action = "BUY" | "SELL";
-export type ContributionFrequency = "weekly" | "biweekly" | "monthly";
+export type ContributionFrequency = "weekly" | "biweekly" | "monthly" | "irregular";
 
 export const portfolioFormSchema = insertPortfolioSchema.extend({
   cash: z.string().min(1, "Cash amount is required"),

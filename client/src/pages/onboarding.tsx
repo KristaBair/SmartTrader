@@ -31,7 +31,7 @@ export function Onboarding() {
   const [, navigate] = useLocation();
   const [step, setStep] = useState<OnboardingStep>("choice");
   const [savingsAmount, setSavingsAmount] = useState("");
-  const [contributionFrequency, setContributionFrequency] = useState<ContributionFrequency>("monthly");
+  const [contributionFrequency, setContributionFrequency] = useState<ContributionFrequency>("irregular");
   const [contributionAmount, setContributionAmount] = useState("");
   const [financialGoals, setFinancialGoals] = useState("");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -237,6 +237,7 @@ export function Onboarding() {
                   <SelectItem value="weekly">Weekly</SelectItem>
                   <SelectItem value="biweekly">Biweekly</SelectItem>
                   <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectItem value="irregular">As needed / Irregular</SelectItem>
                 </SelectContent>
               </Select>
             </div>

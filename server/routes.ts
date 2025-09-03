@@ -421,8 +421,10 @@ If you cannot find specific information, leave those fields empty. Focus on accu
       const { message, chatHistory, savingsAmount, contributionFrequency, contributionAmount } = req.body;
       
       const contributionInfo = contributionFrequency && contributionAmount ? 
-        ` They plan to contribute $${contributionAmount} ${contributionFrequency} to their investments.` : 
-        '';
+        (contributionFrequency === 'irregular' 
+          ? ` They plan to add money irregularly/as needed, roughly $${contributionAmount} when they can.`
+          : ` They plan to contribute $${contributionAmount} ${contributionFrequency} to their investments.`
+        ) : '';
       
       const systemPrompt = `You are a helpful financial advisor AI assistant. The user has $${savingsAmount} in savings and wants to start investing.${contributionInfo}
 
@@ -481,8 +483,10 @@ Current conversation context: The user has $${savingsAmount} in savings and is n
         .join(" ");
 
       const contributionInfo = contributionFrequency && contributionAmount ? 
-        `\nRegular contributions: $${contributionAmount} ${contributionFrequency}` : 
-        '';
+        (contributionFrequency === 'irregular'
+          ? `\nIrregular contributions: roughly $${contributionAmount} when possible`
+          : `\nRegular contributions: $${contributionAmount} ${contributionFrequency}`
+        ) : '';
 
       const suggestionPrompt = `Based on this user's conversation and financial situation, create a personalized investment plan.
 
@@ -492,7 +496,9 @@ Conversation summary: ${conversationSummary}
 Create a JSON response with investment recommendations that include:
 1. An emergency fund (3-6 months expenses)
 2. Diversified investment allocation based on their goals and risk tolerance
-3. Consider their regular contribution schedule for dollar-cost averaging strategies
+3. ${contributionFrequency === 'irregular' 
+    ? 'Consider their flexible contribution approach - suggest simple, accessible investments they can easily add to when they have extra money'
+    : 'Consider their regular contribution schedule for dollar-cost averaging strategies'}
 4. Specific categories like: Emergency Fund, Index Funds, Bonds, Individual Stocks, etc.
 
 Format as JSON:
@@ -505,11 +511,13 @@ Format as JSON:
       "explanation": "string explaining why this allocation"
     }
   ],
-  "overallStrategy": "string explaining the overall approach and how to use regular contributions",
-  "nextSteps": ["array of action items including how to set up automatic investing"]
+  "overallStrategy": "string explaining the overall approach${contributionFrequency === 'irregular' ? ' for irregular contributions' : ' and how to use regular contributions'}",
+  "nextSteps": ["array of action items${contributionFrequency === 'irregular' ? '' : ' including how to set up automatic investing'}"]
 }
 
-Make suggestions realistic and appropriate for a beginner investor. If they have regular contributions planned, emphasize dollar-cost averaging and automatic investment strategies.`;
+Make suggestions realistic and appropriate for a beginner investor. ${contributionFrequency === 'irregular' 
+  ? 'For irregular contributors, focus on simple, flexible investments they can easily add to when they have extra money.'
+  : 'If they have regular contributions planned, emphasize dollar-cost averaging and automatic investment strategies.'}`;
 
       const response = await openai.chat.completions.create({
         model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user

@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/useAuth";
+import { isUnauthorizedError } from "@/lib/authUtils";
 import PortfolioInput from "@/components/portfolio-input";
 import AIRecommendations from "@/components/ai-recommendations";
 import MarketTrends from "@/components/market-trends";
@@ -8,7 +10,8 @@ import PortfolioOverview from "@/components/portfolio-overview";
 import TransactionHistory from "@/components/transaction-history";
 import PortfolioGrowthChart from "@/components/portfolio-growth-chart";
 import { useToast } from "@/hooks/use-toast";
-import { Bell, RefreshCw } from "lucide-react";
+import { Bell, RefreshCw, LogOut, User } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { Portfolio, Recommendation } from "@shared/schema";
 
 export default function Dashboard() {
@@ -16,12 +19,14 @@ export default function Dashboard() {
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [isAutoRefreshing, setIsAutoRefreshing] = useState(false);
   const { toast } = useToast();
+  const { user, isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
 
   // Fetch user portfolio
   const { data: portfolio, isLoading: portfolioLoading } = useQuery<Portfolio>({
-    queryKey: ["/api/portfolios/user/default-user"],
+    queryKey: ["/api/portfolios/user", user?.id],
     retry: false,
+    enabled: !!user?.id,
   });
 
   // Fetch recommendations if portfolio exists
@@ -156,7 +161,30 @@ export default function Dashboard() {
               >
                 <Bell className="h-5 w-5" />
               </button>
-              <div className="w-8 h-8 bg-gray-300 rounded-full" data-testid="img-avatar"></div>
+              
+              {/* User Profile & Logout */}
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2">
+                  <img 
+                    src={user?.profileImageUrl || undefined} 
+                    alt="Profile"
+                    className="w-8 h-8 rounded-full object-cover"
+                    data-testid="img-avatar"
+                  />
+                  <span className="text-sm text-gray-700 hidden sm:block" data-testid="text-username">
+                    {user?.firstName || user?.email || "User"}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => window.location.href = "/api/logout"}
+                  className="text-gray-600 hover:text-gray-900"
+                  data-testid="button-logout"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -166,7 +194,7 @@ export default function Dashboard() {
         {/* Welcome Section */}
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-900 mb-2" data-testid="text-welcome">
-            Welcome back, <span className="text-primary">John</span>
+            Welcome back, <span className="text-primary">{user?.firstName || user?.email || "Trader"}</span>
           </h2>
           <p className="text-gray-600" data-testid="text-subtitle">
             Let's optimize your investment strategy with AI-powered insights
@@ -204,7 +232,7 @@ export default function Dashboard() {
             
             <TransactionHistory 
               portfolioId={portfolio?.id}
-              userId="default-user"
+              userId={user?.id}
             />
           </div>
         </div>

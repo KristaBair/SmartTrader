@@ -1,7 +1,13 @@
-import { type Portfolio, type InsertPortfolio, type Recommendation, type InsertRecommendation, type MarketData, type InsertMarketData, type Transaction, type InsertTransaction } from "@shared/schema";
+import { type Portfolio, type InsertPortfolio, type Recommendation, type InsertRecommendation, type MarketData, type InsertMarketData, type Transaction, type InsertTransaction, type User, type UpsertUser, users, portfolios, recommendations, marketData, transactions } from "@shared/schema";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 export interface IStorage {
+  // User operations - (IMPORTANT) these user operations are mandatory for Replit Auth.
+  getUser(id: string): Promise<User | undefined>;
+  upsertUser(user: UpsertUser): Promise<User>;
+
   // Portfolio methods
   createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio>;
   getPortfolio(id: string): Promise<Portfolio | undefined>;
@@ -24,153 +30,152 @@ export interface IStorage {
   getTransactionsByUser(userId: string): Promise<Transaction[]>;
 }
 
-export class MemStorage implements IStorage {
-  private portfolios: Map<string, Portfolio>;
-  private recommendations: Map<string, Recommendation>;
-  private marketData: Map<string, MarketData>;
-  private transactions: Map<string, Transaction>;
-
+export class DatabaseStorage implements IStorage {
   constructor() {
-    this.portfolios = new Map();
-    this.recommendations = new Map();
-    this.marketData = new Map();
-    this.transactions = new Map();
-    
-    // Initialize with mock market data
+    // Initialize with mock market data on startup
     this.initializeMarketData();
   }
 
-  private initializeMarketData() {
-    const mockData = [
-      { symbol: "SPY", price: "432.78", change: "5.12", changePercent: "1.2" },
-      { symbol: "QQQ", price: "343.34", change: "7.68", changePercent: "2.1" },
-      { symbol: "VIX", price: "16.82", change: "-0.13", changePercent: "-0.8" },
-    ];
+  private async initializeMarketData() {
+    try {
+      // Check if we already have market data
+      const existingData = await db.select().from(marketData).limit(1);
+      if (existingData.length > 0) {
+        return; // Already initialized
+      }
 
-    mockData.forEach(data => {
-      const id = randomUUID();
-      const marketEntry: MarketData = {
-        id,
-        symbol: data.symbol,
-        price: data.price,
-        change: data.change,
-        changePercent: data.changePercent,
-        updatedAt: new Date(),
-      };
-      this.marketData.set(data.symbol, marketEntry);
-    });
+      // Insert initial market data
+      const mockData = [
+        { symbol: "SPY", price: "432.78", change: "5.12", changePercent: "1.2" },
+        { symbol: "QQQ", price: "343.34", change: "7.68", changePercent: "2.1" },
+        { symbol: "VIX", price: "16.82", change: "-0.13", changePercent: "-0.8" },
+      ];
+
+      for (const data of mockData) {
+        await db.insert(marketData).values({
+          symbol: data.symbol,
+          price: data.price,
+          change: data.change,
+          changePercent: data.changePercent,
+        });
+      }
+    } catch (error) {
+      console.log("Market data initialization skipped:", error);
+    }
+  }
+
+  // User operations - (IMPORTANT) these user operations are mandatory for Replit Auth.
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values(userData)
+      .onConflictDoUpdate({
+        target: users.id,
+        set: {
+          ...userData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return user;
   }
 
   async createPortfolio(insertPortfolio: InsertPortfolio): Promise<Portfolio> {
-    const id = randomUUID();
-    const portfolio: Portfolio = {
-      ...insertPortfolio,
-      id,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    } as Portfolio;
-    this.portfolios.set(id, portfolio);
+    const [portfolio] = await db
+      .insert(portfolios)
+      .values(insertPortfolio)
+      .returning();
     return portfolio;
   }
 
   async getPortfolio(id: string): Promise<Portfolio | undefined> {
-    return this.portfolios.get(id);
+    const [portfolio] = await db.select().from(portfolios).where(eq(portfolios.id, id));
+    return portfolio;
   }
 
   async getPortfolioByUserId(userId: string): Promise<Portfolio | undefined> {
-    return Array.from(this.portfolios.values()).find(
-      (portfolio) => portfolio.userId === userId,
-    );
+    const [portfolio] = await db.select().from(portfolios).where(eq(portfolios.userId, userId));
+    return portfolio;
   }
 
   async updatePortfolio(id: string, updates: Partial<InsertPortfolio>): Promise<Portfolio | undefined> {
-    const existing = this.portfolios.get(id);
-    if (!existing) return undefined;
-
-    const updated: Portfolio = {
-      ...existing,
-      ...updates,
-      updatedAt: new Date(),
-    } as Portfolio;
-    this.portfolios.set(id, updated);
-    return updated;
+    const [portfolio] = await db
+      .update(portfolios)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(portfolios.id, id))
+      .returning();
+    return portfolio;
   }
 
   async createRecommendation(insertRecommendation: InsertRecommendation): Promise<Recommendation> {
-    const id = randomUUID();
-    const recommendation: Recommendation = {
-      ...insertRecommendation,
-      id,
-      createdAt: new Date(),
-      targetPrice: insertRecommendation.targetPrice || null,
-      currentPrice: insertRecommendation.currentPrice || null,
-      expectedReturn: insertRecommendation.expectedReturn || null,
-      recommendedAmount: insertRecommendation.recommendedAmount || null,
-    };
-    this.recommendations.set(id, recommendation);
+    const [recommendation] = await db
+      .insert(recommendations)
+      .values(insertRecommendation)
+      .returning();
     return recommendation;
   }
 
   async getRecommendationsByPortfolio(portfolioId: string): Promise<Recommendation[]> {
-    return Array.from(this.recommendations.values()).filter(
-      (rec) => rec.portfolioId === portfolioId,
-    );
+    return await db.select().from(recommendations).where(eq(recommendations.portfolioId, portfolioId));
   }
 
   async deleteRecommendationsByPortfolio(portfolioId: string): Promise<void> {
-    const toDelete = Array.from(this.recommendations.entries())
-      .filter(([_, rec]) => rec.portfolioId === portfolioId)
-      .map(([id]) => id);
-    
-    toDelete.forEach(id => this.recommendations.delete(id));
+    await db.delete(recommendations).where(eq(recommendations.portfolioId, portfolioId));
   }
 
   async upsertMarketData(insertMarketData: InsertMarketData): Promise<MarketData> {
-    const existing = this.marketData.get(insertMarketData.symbol);
-    const id = existing?.id || randomUUID();
-    
-    const marketEntry: MarketData = {
-      ...insertMarketData,
-      id,
-      updatedAt: new Date(),
-    };
-    this.marketData.set(insertMarketData.symbol, marketEntry);
-    return marketEntry;
+    const [market] = await db
+      .insert(marketData)
+      .values(insertMarketData)
+      .onConflictDoUpdate({
+        target: marketData.symbol,
+        set: {
+          ...insertMarketData,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return market;
   }
 
   async getMarketData(symbol: string): Promise<MarketData | undefined> {
-    return this.marketData.get(symbol);
+    const [market] = await db.select().from(marketData).where(eq(marketData.symbol, symbol));
+    return market;
   }
 
   async getAllMarketData(): Promise<MarketData[]> {
-    return Array.from(this.marketData.values());
+    return await db.select().from(marketData);
   }
 
   // Transaction methods
   async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
-    const id = randomUUID();
-    const transaction: Transaction = {
-      ...insertTransaction,
-      id,
-      createdAt: new Date(),
-      fees: insertTransaction.fees || null,
-      notes: insertTransaction.notes || null,
-    };
-    this.transactions.set(id, transaction);
+    const [transaction] = await db
+      .insert(transactions)
+      .values(insertTransaction)
+      .returning();
     return transaction;
   }
 
   async getTransactionsByPortfolio(portfolioId: string): Promise<Transaction[]> {
-    return Array.from(this.transactions.values()).filter(
-      (transaction) => transaction.portfolioId === portfolioId,
-    ).sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
+    return await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.portfolioId, portfolioId))
+      .orderBy(transactions.createdAt);
   }
 
   async getTransactionsByUser(userId: string): Promise<Transaction[]> {
-    return Array.from(this.transactions.values()).filter(
-      (transaction) => transaction.userId === userId,
-    ).sort((a, b) => new Date(b.createdAt || '').getTime() - new Date(a.createdAt || '').getTime());
+    return await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.userId, userId))
+      .orderBy(transactions.createdAt);
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();

@@ -4,10 +4,26 @@ import { storage } from "./storage";
 import { analyzePortfolio, getRiskAssessment } from "./services/openai";
 import { portfolioFormSchema } from "@shared/schema";
 import { z } from "zod";
+import { setupAuth, isAuthenticated } from "./replitAuth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Auth middleware
+  await setupAuth(app);
+
+  // Auth routes
+  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      res.json(user);
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
   // Portfolio routes
-  app.post("/api/portfolios", async (req, res) => {
+  app.post("/api/portfolios", isAuthenticated, async (req: any, res) => {
     try {
       const validatedData = portfolioFormSchema.parse(req.body);
       
@@ -23,8 +39,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
       }).filter(entry => entry.symbol && entry.amount > 0);
 
+      const userId = req.user.claims.sub;
       const portfolioData = {
-        userId: "default-user", // In a real app, this would come from authentication
+        userId: userId,
         cash: validatedData.cash,
         investments: investmentEntries,
         initialInvestment: validatedData.initialInvestment || "0",
@@ -35,7 +52,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       // Check if user already has a portfolio
-      const existingPortfolio = await storage.getPortfolioByUserId("default-user");
+      const existingPortfolio = await storage.getPortfolioByUserId(userId);
       
       let portfolio;
       if (existingPortfolio) {
@@ -55,9 +72,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/portfolios/user/:userId", async (req, res) => {
+  app.get("/api/portfolios/user/:userId", isAuthenticated, async (req: any, res) => {
     try {
-      const { userId } = req.params;
+      const userId = req.user.claims.sub;
       const portfolio = await storage.getPortfolioByUserId(userId);
       
       if (!portfolio) {
@@ -73,7 +90,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // AI Analysis routes
-  app.post("/api/portfolios/:id/analyze", async (req, res) => {
+  app.post("/api/portfolios/:id/analyze", isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
       const portfolio = await storage.getPortfolio(id);
@@ -131,7 +148,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/portfolios/:id/recommendations", async (req, res) => {
+  app.get("/api/portfolios/:id/recommendations", isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
       const recommendations = await storage.getRecommendationsByPortfolio(id);
@@ -143,7 +160,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Risk assessment route
-  app.post("/api/risk-assessment", async (req, res) => {
+  app.post("/api/risk-assessment", isAuthenticated, async (req: any, res) => {
     try {
       const { investments, riskTolerance } = req.body;
       
@@ -175,18 +192,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Transaction routes
-  app.post("/api/transactions", async (req, res) => {
+  app.post("/api/transactions", isAuthenticated, async (req: any, res) => {
     try {
-      const { portfolioId, userId, symbol, name, action, quantity, price, totalAmount, fees, notes } = req.body;
+      const userId = req.user.claims.sub;
+      const { portfolioId, symbol, name, action, quantity, price, totalAmount, fees, notes } = req.body;
       
-      if (!portfolioId || !userId || !symbol || !name || !action || !quantity || !price || !totalAmount) {
+      if (!portfolioId || !symbol || !name || !action || !quantity || !price || !totalAmount) {
         res.status(400).json({ message: "Missing required transaction fields" });
         return;
       }
 
       const transaction = await storage.createTransaction({
         portfolioId,
-        userId,
+        userId: userId,
         symbol,
         name,
         action,
@@ -204,7 +222,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/portfolios/:id/transactions", async (req, res) => {
+  app.get("/api/portfolios/:id/transactions", isAuthenticated, async (req: any, res) => {
     try {
       const { id } = req.params;
       const transactions = await storage.getTransactionsByPortfolio(id);
@@ -215,9 +233,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/users/:userId/transactions", async (req, res) => {
+  app.get("/api/users/:userId/transactions", isAuthenticated, async (req: any, res) => {
     try {
-      const { userId } = req.params;
+      const userId = req.user.claims.sub;
       const transactions = await storage.getTransactionsByUser(userId);
       res.json(transactions);
     } catch (error) {

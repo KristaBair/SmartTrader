@@ -9,9 +9,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Brain } from "lucide-react";
+import { PlusCircle, Brain, Upload, Image, X, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 interface PortfolioInputProps {
   onSubmit: (data: PortfolioFormData) => Promise<void>;
@@ -26,6 +26,9 @@ export default function PortfolioInput({ onSubmit, isLoading, portfolio }: Portf
     score: number;
     explanation: string;
   } | null>(null);
+  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
 
   const form = useForm<PortfolioFormData>({
     resolver: zodResolver(portfolioFormSchema),
@@ -102,6 +105,105 @@ export default function PortfolioInput({ onSubmit, isLoading, portfolio }: Portf
     }
   }, [watchedInvestments, watchedRiskTolerance]);
 
+  // Image processing functions
+  const handleImageUpload = useCallback((file: File) => {
+    if (file.size > 10 * 1024 * 1024) { // 10MB limit
+      toast({
+        title: "File too large",
+        description: "Please upload an image smaller than 10MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload a valid image file.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUploadedImage(file);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setImagePreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  }, [toast]);
+
+  const processImageWithAI = async () => {
+    if (!uploadedImage) return;
+
+    setIsProcessingImage(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', uploadedImage);
+
+      const response = await fetch('/api/portfolio/extract-from-image', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to process image');
+      }
+
+      const extractedData = await response.json();
+      
+      // Update form with extracted data
+      if (extractedData.cash) {
+        form.setValue('cash', extractedData.cash);
+      }
+      if (extractedData.investments) {
+        form.setValue('investments', extractedData.investments);
+      }
+      if (extractedData.initialInvestment) {
+        form.setValue('initialInvestment', extractedData.initialInvestment);
+      }
+      if (extractedData.monthlyContribution) {
+        form.setValue('monthlyContribution', extractedData.monthlyContribution);
+      }
+      
+      toast({
+        title: "Portfolio data extracted!",
+        description: "AI successfully extracted your portfolio information from the image.",
+      });
+
+      // Clear the image after processing
+      clearImage();
+      
+    } catch (error) {
+      toast({
+        title: "Image processing failed",
+        description: "Could not extract portfolio data from the image. Please try again or enter manually.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessingImage(false);
+    }
+  };
+
+  const clearImage = () => {
+    setUploadedImage(null);
+    setImagePreview(null);
+  };
+
+  const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      handleImageUpload(files[0]);
+    }
+  }, [handleImageUpload]);
+
+  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  }, []);
+
   return (
     <Card>
       <CardHeader>
@@ -111,6 +213,82 @@ export default function PortfolioInput({ onSubmit, isLoading, portfolio }: Portf
         </CardTitle>
       </CardHeader>
       <CardContent>
+        {/* Image Upload Section */}
+        <div className="mb-6 p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
+          <div className="text-center">
+            <Upload className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+            <h3 className="text-sm font-medium text-gray-900 mb-1">
+              Upload Portfolio Screenshot
+            </h3>
+            <p className="text-xs text-gray-500 mb-4">
+              Upload a screenshot of your brokerage account and let AI extract your portfolio data
+            </p>
+            
+            {!imagePreview ? (
+              <div
+                onDrop={onDrop}
+                onDragOver={onDragOver}
+                className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-blue-400 transition-colors cursor-pointer"
+              >
+                <input
+                  type="file"
+                  id="portfolio-image"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleImageUpload(file);
+                  }}
+                />
+                <label htmlFor="portfolio-image" className="cursor-pointer">
+                  <Image className="mx-auto h-12 w-12 text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-600">
+                    Drag & drop an image here, or <span className="text-blue-600 underline">click to browse</span>
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">PNG, JPG, WEBP up to 10MB</p>
+                </label>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="relative inline-block">
+                  <img 
+                    src={imagePreview} 
+                    alt="Portfolio screenshot preview" 
+                    className="max-w-full max-h-48 rounded-lg shadow-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={clearImage}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                    data-testid="button-clear-image"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <Button
+                  type="button"
+                  onClick={processImageWithAI}
+                  disabled={isProcessingImage}
+                  className="bg-blue-600 hover:bg-blue-700"
+                  data-testid="button-process-image"
+                >
+                  {isProcessingImage ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing with AI...
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="mr-2 h-4 w-4" />
+                      Extract Portfolio Data
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
             <FormField

@@ -5,8 +5,30 @@ import { analyzePortfolio, getRiskAssessment } from "./services/openai";
 import { portfolioFormSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import multer from "multer";
+import OpenAI from "openai";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Configure multer for image uploads
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10MB limit
+    },
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype.startsWith('image/')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Only image files are allowed'));
+      }
+    },
+  });
+
+  // Initialize OpenAI client
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
   // Auth middleware
   await setupAuth(app);
 
@@ -313,6 +335,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
     res.header('Access-Control-Allow-Methods', 'GET');
     res.sendStatus(200);
+  });
+
+  // Image processing endpoint for portfolio data extraction
+  app.post('/api/portfolio/extract-from-image', upload.single('image'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: 'No image file provided' });
+      }
+
+      const imageBuffer = req.file.buffer;
+      const base64Image = imageBuffer.toString('base64');
+      const mimeType = req.file.mimetype;
+
+      // Use OpenAI Vision to analyze the image
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o", // GPT-4 with vision capabilities
+        messages: [
+          {
+            role: "system",
+            content: `You are a financial data extraction expert. Analyze the provided portfolio screenshot and extract the following information:
+
+1. Available cash balance
+2. Individual stock/ETF positions with their symbols and current values
+3. Initial investment amount (if visible)
+4. Monthly contribution amount (if visible)
+
+Return the data in this exact JSON format:
+{
+  "cash": "dollar amount as string (e.g., '5000')",
+  "investments": "comma-separated list of symbol:amount pairs (e.g., 'AAPL: $5000, GOOGL: $3000, SPY: $2000')",
+  "initialInvestment": "dollar amount as string (e.g., '50000') or empty if not found",
+  "monthlyContribution": "dollar amount as string (e.g., '1000') or empty if not found"
+}
+
+Extract only the numbers without dollar signs for cash, initialInvestment, and monthlyContribution. For investments, use the format shown above with symbols and dollar amounts.
+
+If you cannot find specific information, leave those fields empty. Focus on accuracy over completeness.`
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Please extract portfolio data from this brokerage account screenshot:"
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${base64Image}`
+                }
+              }
+            ]
+          }
+        ],
+        response_format: { type: "json_object" },
+        max_tokens: 1000,
+      });
+
+      const extractedData = JSON.parse(response.choices[0].message.content || '{}');
+      
+      // Validate and clean up the extracted data
+      const portfolioData = {
+        cash: extractedData.cash || '',
+        investments: extractedData.investments || '',
+        initialInvestment: extractedData.initialInvestment || '',
+        monthlyContribution: extractedData.monthlyContribution || '',
+      };
+
+      console.log('Extracted portfolio data:', portfolioData);
+      res.json(portfolioData);
+
+    } catch (error) {
+      console.error('Image processing error:', error);
+      res.status(500).json({ 
+        message: 'Failed to process image', 
+        error: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
   });
 
   const httpServer = createServer(app);

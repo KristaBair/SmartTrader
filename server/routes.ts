@@ -339,6 +339,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Image processing endpoint for portfolio data extraction
+  // Test endpoint to verify OpenAI API key is working
+  app.get("/api/test-openai", async (req, res) => {
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-5",
+        messages: [{ role: "user", content: "Say 'API key is working'" }],
+        max_completion_tokens: 10
+      });
+      res.json({ 
+        success: true, 
+        message: response.choices[0].message.content,
+        apiKeyStatus: "working"
+      });
+    } catch (error) {
+      console.error("OpenAI API test error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        apiKeyStatus: "failed"
+      });
+    }
+  });
+
   app.post('/api/portfolio/extract-from-image', upload.single('image'), async (req, res) => {
     try {
       if (!req.file) {

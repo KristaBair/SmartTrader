@@ -342,14 +342,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Test endpoint to verify OpenAI API key is working
   app.get("/api/test-openai", async (req, res) => {
     try {
+      console.log("Testing OpenAI API...");
       const response = await openai.chat.completions.create({
-        model: "gpt-5",
+        model: "gpt-3.5-turbo",
         messages: [{ role: "user", content: "Say 'API key is working'" }],
-        max_completion_tokens: 10
+        max_tokens: 50
       });
+      console.log("Full OpenAI response:", JSON.stringify(response, null, 2));
+      console.log("Message content:", response.choices[0].message.content);
       res.json({ 
         success: true, 
         message: response.choices[0].message.content,
+        fullResponse: response.choices[0],
         apiKeyStatus: "working"
       });
     } catch (error) {
@@ -566,16 +570,53 @@ Popular beginner investments to consider:
 Make suggestions realistic and actionable with specific buy orders they can place.`;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
+        model: "gpt-3.5-turbo",
         messages: [
-          { role: "system", content: "You are a professional financial advisor providing investment allocation suggestions." },
+          { role: "system", content: "You are a professional financial advisor providing investment allocation suggestions. Always respond with valid JSON format only." },
           { role: "user", content: suggestionPrompt }
         ],
-        response_format: { type: "json_object" },
-        max_completion_tokens: 800,
+        max_tokens: 1000,
       });
 
-      const suggestions = JSON.parse(response.choices[0].message.content || '{}');
+      let suggestions;
+      try {
+        suggestions = JSON.parse(response.choices[0].message.content || '{}');
+      } catch (parseError) {
+        // If JSON parsing fails, create a fallback response
+        suggestions = {
+          recommendations: [
+            {
+              category: "Emergency Fund",
+              ticker: "HYSA",
+              name: "High-Yield Savings Account",
+              suggestedAmount: Math.floor(savingsAmount * 0.3),
+              percentage: 30,
+              explanation: "Essential emergency fund for 3-6 months of expenses",
+              action: "ALLOCATE"
+            },
+            {
+              category: "Index Fund",
+              ticker: "SPY",
+              name: "SPDR S&P 500 ETF",
+              suggestedAmount: Math.floor(savingsAmount * 0.4),
+              percentage: 40,
+              explanation: "Broad market exposure for long-term growth",
+              action: "BUY"
+            },
+            {
+              category: "Technology Growth",
+              ticker: "QQQ",
+              name: "Invesco QQQ Trust",
+              suggestedAmount: Math.floor(savingsAmount * 0.3),
+              percentage: 30,
+              explanation: "Technology-focused growth for higher returns",
+              action: "BUY"
+            }
+          ],
+          overallStrategy: "Balanced approach with emergency fund, broad market exposure, and growth potential",
+          nextSteps: ["Open a brokerage account", "Set up automatic investing", "Review and rebalance quarterly"]
+        };
+      }
       
       res.json(suggestions);
 

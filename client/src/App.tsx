@@ -6,6 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import Dashboard from "@/pages/dashboard";
 import { Onboarding } from "@/pages/onboarding";
 import MarketIntelligence from "@/pages/market-intelligence";
+import Invest from "@/pages/invest";
+import Patterns from "@/pages/patterns";
 import NotFound from "@/pages/not-found";
 import { getOnboarding } from "@/lib/localStore";
 
@@ -19,6 +21,8 @@ function Router() {
       <Route path="/onboarding" component={Onboarding} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/market-intelligence" component={MarketIntelligence} />
+      <Route path="/invest" component={Invest} />
+      <Route path="/patterns" component={Patterns} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -58,6 +58,30 @@ export async function getStockNews(symbol: string): Promise<NewsArticle[]> {
   }
 }
 
+export async function getNewsByDateRange(
+  query: string,
+  from: string,
+  to: string
+): Promise<NewsArticle[]> {
+  try {
+    const url = `${BASE_URL}/everything?q=${encodeURIComponent(query)}&from=${from}&to=${to}&language=en&sortBy=relevancy&pageSize=5&apiKey=${NEWS_API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    if (data.status !== "ok") return [];
+    return (data.articles || []).map((article: any) => ({
+      title: article.title || "",
+      description: article.description || "",
+      url: article.url || "",
+      source: article.source?.name || "Unknown",
+      publishedAt: article.publishedAt || "",
+      content: article.content || article.description || "",
+    }));
+  } catch (error) {
+    console.error("Failed to fetch news by date range:", error);
+    return [];
+  }
+}
+
 export async function getTopHeadlines(): Promise<NewsArticle[]> {
   try {
     const url = `${BASE_URL}/top-headlines?category=business&language=en&pageSize=10&apiKey=${NEWS_API_KEY}`;

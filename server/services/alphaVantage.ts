@@ -49,6 +49,46 @@ export async function getStockQuote(symbol: string): Promise<StockQuote | null> 
   }
 }
 
+export interface DailyPricePoint {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export async function getHistoricalPrices(
+  symbol: string,
+  outputsize: "compact" | "full" = "compact"
+): Promise<DailyPricePoint[]> {
+  try {
+    const url = `${BASE_URL}?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(symbol)}&outputsize=${outputsize}&apikey=${ALPHA_VANTAGE_API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    const timeSeries = data["Time Series (Daily)"];
+    if (!timeSeries) {
+      console.error("No time series data for", symbol, data);
+      return [];
+    }
+
+    return Object.entries(timeSeries)
+      .map(([date, values]: [string, any]) => ({
+        date,
+        open: parseFloat(values["1. open"]),
+        high: parseFloat(values["2. high"]),
+        low: parseFloat(values["3. low"]),
+        close: parseFloat(values["4. close"]),
+        volume: parseInt(values["5. volume"]),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  } catch (error) {
+    console.error(`Failed to fetch historical prices for ${symbol}:`, error);
+    return [];
+  }
+}
+
 export async function getMultipleQuotes(symbols: string[]): Promise<Record<string, StockQuote>> {
   const results: Record<string, StockQuote> = {};
   // Alpha Vantage free tier has rate limits - fetch sequentially with small delay

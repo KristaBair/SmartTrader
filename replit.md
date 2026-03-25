@@ -2,7 +2,12 @@
 
 ## Overview
 
-This is a full-stack web application that provides AI-powered investment portfolio analysis and recommendations. The application allows users to input their investment portfolio data (cash, investments, risk tolerance, and timeline) and receive personalized investment advice powered by OpenAI's GPT models. It features real-time market data display, portfolio overview visualizations, and intelligent recommendations with confidence scoring.
+SmartTrader is an AI-powered investment tool with three core features:
+1. **Smart Invest** — User enters how much they want to invest right now; AI returns a specific allocation plan across stocks/ETFs with exact dollar amounts.
+2. **Pattern Analyzer** — User looks up any stock ticker; the app fetches 100 days of price history, finds major dips/peaks (>4% single-day moves), pulls news from around each event, and runs AI analysis to surface repeating patterns and what causes them.
+3. **Market Intelligence** — Live financial news with AI trading signal analysis.
+
+All user data is stored in localStorage — no accounts or database required for the user-facing features. The backend keeps API keys secure and handles all external API calls.
 
 The system is built as a modern React SPA with an Express.js backend, featuring a clean separation between client and server code with shared type definitions.
 

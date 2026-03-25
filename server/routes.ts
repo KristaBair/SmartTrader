@@ -1,10 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { analyzePortfolio, getRiskAssessment } from "./services/openai";
+import { analyzePortfolio, getRiskAssessment, suggestInvestment, analyzeStockPatterns, type StockEvent } from "./services/openai";
 import { analyzeNewsEvent, generateAlertMessage, shouldGenerateAlert, getMockNewsEvents } from "./services/marketIntelligence";
-import { getStockQuote, getMultipleQuotes, searchSymbol } from "./services/alphaVantage";
-import { getFinancialNews, getStockNews, getTopHeadlines } from "./services/newsApi";
+import { getStockQuote, getMultipleQuotes, searchSymbol, getHistoricalPrices } from "./services/alphaVantage";
+import { getFinancialNews, getStockNews, getTopHeadlines, getNewsByDateRange } from "./services/newsApi";
 import { portfolioFormSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, isAuthenticated } from "./replitAuth";
@@ -61,6 +61,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Direct analysis error:", error);
       res.status(500).json({ message: "Analysis failed" });
+    }
+  });
+
+  // Public: investment suggestion based on amount
+  app.post("/api/invest/suggest", async (req, res) => {
+    try {
+      const { amount, riskTolerance, goal } = req.body;
+      if (!amount || isNaN(parseFloat(amount))) {
+        return res.status(400).json({ message: "Valid amount is required" });
+      }
+      const plan = await suggestInvestment(parseFloat(amount), riskTolerance || "moderate", goal);
+      res.json(plan);
+    } catch (error) {
+      console.error("Investment suggestion error:", error);
+      res.status(500).json({ message: "Failed to generate investment suggestions" });
+    }
+  });
+
+  // Public: stock pattern analysis
+  app.post("/api/patterns/analyze", async (req, res) => {
+    try {
+      const { ticker } = req.body;
+      if (!ticker) return res.status(400).json({ message: "Ticker is required" });
+
+      const symbol = ticker.trim().toUpperCase();
+
+      // 1. Fetch historical price data (last 100 trading days)
+      const prices = await getHistoricalPrices(symbol, "compact");
+      if (prices.length < 10) {
+        return res.status(404).json({ message: `No price data found for ${symbol}. Check the ticker symbol.` });
+      }
+
+      // 2. Find significant single-day moves (>4%)
+      const events: StockEvent[] = [];
+      for (let i = 1; i < prices.length; i++) {
+        const prev = prices[i - 1].close;
+        const curr = prices[i].close;
+        const change = ((curr - prev) / prev) * 100;
+        if (Math.abs(change) >= 4) {
+          events.push({
+            date: prices[i].date,
+            type: change > 0 ? "PEAK" : "DIP",
+            magnitude: Math.abs(change),
+            price: curr,
+            priceChange: change,
+            news: [],
+          });
+        }
+      }
+
+      // Sort by magnitude, keep top 6
+      events.sort((a, b) => b.magnitude - a.magnitude);
+      const topEvents = events.slice(0, 6).sort((a, b) => a.date.localeCompare(b.date));
+
+      // 3. Fetch news for each event (7 days before the event)
+      for (const event of topEvents) {
+        const eventDate = new Date(event.date);
+        const fromDate = new Date(eventDate);
+        fromDate.setDate(fromDate.getDate() - 7);
+        const from = fromDate.toISOString().split("T")[0];
+        const to = event.date;
+
+        const articles = await getNewsByDateRange(symbol, from, to);
+        event.news = articles.map((a) => ({
+          title: a.title,
+          source: a.source,
+          publishedAt: a.publishedAt,
+        }));
+
+        // Avoid rate limiting
+        await new Promise((r) => setTimeout(r, 300));
+      }
+
+      // 4. Get current quote for company name
+      const quote = await getStockQuote(symbol);
+      const companyName = quote?.name || symbol;
+
+      // 5. AI pattern analysis
+      const analysis = await analyzeStockPatterns(symbol, companyName, topEvents);
+
+      // Include price data summary for chart
+      const priceHistory = prices.map((p) => ({ date: p.date, close: p.close, volume: p.volume }));
+
+      res.json({
+        ticker: symbol,
+        companyName,
+        currentPrice: quote?.price,
+        priceChange: quote?.changePercent,
+        priceHistory,
+        events: topEvents,
+        analysis,
+      });
+    } catch (error) {
+      console.error("Pattern analysis error:", error);
+      res.status(500).json({ message: "Pattern analysis failed. Please try again." });
     }
   });
 

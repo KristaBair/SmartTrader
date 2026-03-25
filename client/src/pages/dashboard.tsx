@@ -7,7 +7,7 @@ import MarketTrends from "@/components/market-trends";
 import PortfolioOverview from "@/components/portfolio-overview";
 import PortfolioGrowthChart from "@/components/portfolio-growth-chart";
 import { useToast } from "@/hooks/use-toast";
-import { Bell, RefreshCw, TrendingUp, BarChart2, Trash2 } from "lucide-react";
+import { Bell, RefreshCw, TrendingUp, BarChart2, Trash2, DollarSign, Brain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import type { Recommendation } from "@shared/schema";
@@ -109,6 +109,24 @@ export default function Dashboard() {
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={() => navigate("/invest")}
+                className="text-green-700 hover:text-green-900 hover:bg-green-50"
+              >
+                <DollarSign className="h-4 w-4 mr-1" />
+                Invest Now
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("/patterns")}
+                className="text-purple-700 hover:text-purple-900 hover:bg-purple-50"
+              >
+                <Brain className="h-4 w-4 mr-1" />
+                Patterns
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => navigate("/market-intelligence")}
               >
                 <BarChart2 className="h-4 w-4 mr-1" />
@@ -136,11 +154,53 @@ export default function Dashboard() {
           <h2 className="text-3xl font-bold text-gray-900 mb-2">
             Welcome back, Trader
           </h2>
-          <p className="text-gray-600">
+          <p className="text-gray-600 mb-6">
             {onboarding?.savingsAmount
               ? `Managing $${onboarding.savingsAmount.toLocaleString()} · AI-powered insights`
               : "Let's optimize your investment strategy with AI-powered insights"}
           </p>
+
+          {/* Feature cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <button
+              onClick={() => navigate("/invest")}
+              className="text-left p-4 rounded-xl border-2 border-green-200 bg-green-50 hover:bg-green-100 hover:border-green-400 transition-all group"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-green-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <DollarSign className="text-white h-5 w-5" />
+                </div>
+                <h3 className="font-bold text-green-900">Smart Invest</h3>
+              </div>
+              <p className="text-sm text-green-800">Tell the AI how much you have — get a specific allocation plan instantly.</p>
+            </button>
+
+            <button
+              onClick={() => navigate("/patterns")}
+              className="text-left p-4 rounded-xl border-2 border-purple-200 bg-purple-50 hover:bg-purple-100 hover:border-purple-400 transition-all group"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <Brain className="text-white h-5 w-5" />
+                </div>
+                <h3 className="font-bold text-purple-900">Pattern Analyzer</h3>
+              </div>
+              <p className="text-sm text-purple-800">Look up any stock — see major dips/peaks, the news at the time, and AI-identified patterns.</p>
+            </button>
+
+            <button
+              onClick={() => navigate("/market-intelligence")}
+              className="text-left p-4 rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-400 transition-all group"
+            >
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <BarChart2 className="text-white h-5 w-5" />
+                </div>
+                <h3 className="font-bold text-blue-900">Market Intel</h3>
+              </div>
+              <p className="text-sm text-blue-800">Live financial news with AI trading signals and market event tracking.</p>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

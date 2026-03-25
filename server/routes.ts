@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { analyzePortfolio, getRiskAssessment } from "./services/openai";
 import { analyzeNewsEvent, generateAlertMessage, shouldGenerateAlert, getMockNewsEvents } from "./services/marketIntelligence";
+import { getStockQuote, getMultipleQuotes, searchSymbol } from "./services/alphaVantage";
 import { portfolioFormSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, isAuthenticated } from "./replitAuth";
@@ -211,6 +212,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Market data fetch error:", error);
       res.status(500).json({ message: "Failed to fetch market data" });
+    }
+  });
+
+  // Alpha Vantage stock data routes
+  app.get("/api/stocks/quote/:symbol", async (req, res) => {
+    try {
+      const { symbol } = req.params;
+      const quote = await getStockQuote(symbol.toUpperCase());
+      if (!quote) {
+        return res.status(404).json({ message: `No data found for symbol: ${symbol}` });
+      }
+      res.json(quote);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch stock quote" });
+    }
+  });
+
+  app.post("/api/stocks/quotes", async (req, res) => {
+    try {
+      const { symbols } = req.body;
+      if (!symbols || !Array.isArray(symbols)) {
+        return res.status(400).json({ message: "symbols array is required" });
+      }
+      const quotes = await getMultipleQuotes(symbols.map((s: string) => s.toUpperCase()));
+      res.json(quotes);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch stock quotes" });
+    }
+  });
+
+  app.get("/api/stocks/search", async (req, res) => {
+    try {
+      const { q } = req.query;
+      if (!q || typeof q !== "string") {
+        return res.status(400).json({ message: "Query parameter 'q' is required" });
+      }
+      const results = await searchSymbol(q);
+      res.json(results);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to search stocks" });
     }
   });
 

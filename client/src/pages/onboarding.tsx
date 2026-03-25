@@ -43,6 +43,7 @@ export function Onboarding() {
   const [currentMessage, setCurrentMessage] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [suggestions, setSuggestions] = useState<any>(null);
+  const [stockPrices, setStockPrices] = useState<Record<string, any>>({});
   const { toast } = useToast();
 
   const handlePortfolioChoice = async () => {
@@ -121,6 +122,21 @@ export function Onboarding() {
       const responseData = await response.json();
       setSuggestions(responseData);
       setStep("suggestions");
+
+      // Fetch real stock prices for recommended tickers
+      const tickers = responseData.recommendations
+        ?.filter((r: any) => r.ticker && r.ticker !== "HYSA")
+        .map((r: any) => r.ticker);
+
+      if (tickers && tickers.length > 0) {
+        try {
+          const priceResponse = await apiRequest("POST", "/api/stocks/quotes", { symbols: tickers });
+          const prices = await priceResponse.json();
+          setStockPrices(prices);
+        } catch {
+          // Price fetching is optional - don't block the flow
+        }
+      }
     } catch (error) {
       toast({
         title: "Failed to generate suggestions",
@@ -432,7 +448,22 @@ export function Onboarding() {
                   {rec.ticker && rec.action === 'BUY' && (
                     <div className="bg-green-50 border border-green-200 p-3 rounded mb-3">
                       <p className="text-sm font-medium text-green-800">🚀 Ready to Buy:</p>
-                      <p className="font-mono text-green-700">BUY {rec.ticker} - ${rec.suggestedAmount.toLocaleString()}</p>
+                      <p className="font-mono text-green-700 font-bold">BUY {rec.ticker} — ${rec.suggestedAmount.toLocaleString()}</p>
+                      {stockPrices[rec.ticker] && (
+                        <div className="mt-2 pt-2 border-t border-green-200 flex justify-between text-sm">
+                          <span className="text-gray-600">
+                            Live Price: <span className="font-bold text-gray-800">${stockPrices[rec.ticker].price.toFixed(2)}</span>
+                          </span>
+                          <span className={stockPrices[rec.ticker].change >= 0 ? "text-green-700 font-medium" : "text-red-600 font-medium"}>
+                            {stockPrices[rec.ticker].change >= 0 ? "▲" : "▼"} {Math.abs(stockPrices[rec.ticker].changePercent).toFixed(2)}% today
+                          </span>
+                        </div>
+                      )}
+                      {stockPrices[rec.ticker] && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          ≈ {Math.floor(rec.suggestedAmount / stockPrices[rec.ticker].price)} shares at current price
+                        </p>
+                      )}
                     </div>
                   )}
                   <p className="text-gray-600 mb-2">{rec.explanation}</p>

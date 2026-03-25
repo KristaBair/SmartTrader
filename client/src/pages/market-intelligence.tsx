@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +12,8 @@ import {
   Eye,
   Clock,
   ExternalLink,
-  RefreshCw
+  RefreshCw,
+  ArrowLeft
 } from "lucide-react";
 
 interface MarketEvent {
@@ -43,6 +45,7 @@ interface UserAlert {
 }
 
 export default function MarketIntelligence() {
+  const [, navigate] = useLocation();
   const [marketEvents, setMarketEvents] = useState<MarketEvent[]>([]);
   const [newsHeadlines, setNewsHeadlines] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<UserAlert[]>([]);
@@ -166,9 +169,15 @@ export default function MarketIntelligence() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Market Intelligence</h1>
-          <p className="text-gray-600">AI-powered market monitoring and trading alerts</p>
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Dashboard
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold">Market Intelligence</h1>
+            <p className="text-gray-600">AI-powered market monitoring and trading alerts</p>
+          </div>
         </div>
         <Button 
           onClick={processNews} 

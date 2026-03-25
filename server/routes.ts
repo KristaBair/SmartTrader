@@ -47,6 +47,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Public: analyze portfolio directly (no auth needed — localStorage-based frontend)
+  app.post("/api/portfolios/analyze-direct", async (req, res) => {
+    try {
+      const { cash, investments, riskTolerance, timeline } = req.body;
+      const analysis = await analyzePortfolio(
+        parseFloat(cash) || 0,
+        investments || "",
+        (riskTolerance || "moderate") as any,
+        (timeline || "long_term") as any
+      );
+      res.json(analysis);
+    } catch (error) {
+      console.error("Direct analysis error:", error);
+      res.status(500).json({ message: "Analysis failed" });
+    }
+  });
+
   // Portfolio routes
   app.post("/api/portfolios", isAuthenticated, async (req: any, res) => {
     try {

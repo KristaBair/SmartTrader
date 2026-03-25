@@ -18,6 +18,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { saveOnboarding, savePortfolio } from "@/lib/localStore";
 import type { ContributionFrequency } from "@shared/schema";
 
 type OnboardingStep = "choice" | "savings" | "chat" | "suggestions";
@@ -145,69 +146,54 @@ export function Onboarding() {
     }
   };
 
-  const handleAddRecommendationsToPortfolio = async () => {
-    try {
-      // Convert AI recommendations to portfolio entries
-      const portfolioEntries = suggestions.recommendations
-        ?.filter((rec: any) => rec.action === 'BUY' && rec.ticker && rec.ticker !== 'HYSA')
-        .map((rec: any) => ({
-          symbol: rec.ticker,
-          companyName: rec.name,
-          shares: Math.floor(rec.suggestedAmount / 100), // Estimate shares (will be updated with real data)
-          purchasePrice: 100, // Placeholder - will be updated with real price
-          purchaseDate: new Date().toISOString().split('T')[0],
-          currentPrice: 100, // Placeholder - will be updated with real price
-          totalValue: rec.suggestedAmount
-        }));
+  const handleAddRecommendationsToPortfolio = () => {
+    const portfolioEntries = suggestions.recommendations
+      ?.filter((rec: any) => rec.action === 'BUY' && rec.ticker && rec.ticker !== 'HYSA')
+      .map((rec: any) => ({
+        symbol: rec.ticker,
+        name: rec.name,
+        shares: stockPrices[rec.ticker]
+          ? Math.floor(rec.suggestedAmount / stockPrices[rec.ticker].price)
+          : Math.floor(rec.suggestedAmount / 100),
+        averagePrice: stockPrices[rec.ticker]?.price ?? 100,
+      }));
 
-      if (portfolioEntries && portfolioEntries.length > 0) {
-        // Create a portfolio with the recommended investments
-        const portfolioData = {
-          cash: 0, // User will allocate cash separately for emergency fund
-          investments: portfolioEntries.map(entry => ({
-            symbol: entry.symbol,
-            name: entry.companyName,
-            shares: entry.shares,
-            averagePrice: entry.purchasePrice
-          })),
-          riskTolerance: "moderate", // Default based on getting stock recommendations
-          timeline: "long_term" // Default for investment recommendations
-        };
-
-        await apiRequest("POST", "/api/portfolios", portfolioData);
-
-        toast({
-          title: "Portfolio Updated! 🎉",
-          description: `Added ${portfolioEntries.length} recommended investments to your portfolio`,
-        });
-
-        // Small delay before navigating
-        setTimeout(() => navigate("/dashboard"), 1000);
-      }
-    } catch (error) {
-      toast({
-        title: "Error updating portfolio",
-        description: "Please try again or add investments manually",
-        variant: "destructive"
+    if (portfolioEntries && portfolioEntries.length > 0) {
+      savePortfolio({
+        cash: 0,
+        investments: portfolioEntries,
+        riskTolerance: "moderate",
+        timeline: "long_term",
+        lastUpdated: new Date().toISOString(),
       });
-    }
-  };
 
-  const proceedToDashboard = async () => {
-    try {
-      // Save onboarding data for users who completed the savings path
-      await apiRequest("POST", "/api/onboarding", {
-        onboardingType: "savings",
+      saveOnboarding({
+        completed: true,
         savingsAmount: parseFloat(savingsAmount),
         contributionFrequency,
         contributionAmount: parseFloat(contributionAmount),
-        chatHistory: chatMessages,
-        investmentSuggestions: suggestions,
-        completed: new Date()
+        suggestions,
+        completedAt: new Date().toISOString(),
       });
-    } catch (error) {
-      console.log("Failed to save onboarding data:", error);
+
+      toast({
+        title: "Portfolio saved! 🎉",
+        description: `Added ${portfolioEntries.length} investments to your portfolio`,
+      });
+
+      setTimeout(() => navigate("/dashboard"), 800);
     }
+  };
+
+  const proceedToDashboard = () => {
+    saveOnboarding({
+      completed: true,
+      savingsAmount: parseFloat(savingsAmount) || 0,
+      contributionFrequency,
+      contributionAmount: parseFloat(contributionAmount) || 0,
+      suggestions,
+      completedAt: new Date().toISOString(),
+    });
     navigate("/dashboard");
   };
 

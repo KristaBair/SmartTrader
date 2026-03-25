@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { analyzePortfolio, getRiskAssessment } from "./services/openai";
 import { analyzeNewsEvent, generateAlertMessage, shouldGenerateAlert, getMockNewsEvents } from "./services/marketIntelligence";
 import { getStockQuote, getMultipleQuotes, searchSymbol } from "./services/alphaVantage";
+import { getFinancialNews, getStockNews, getTopHeadlines } from "./services/newsApi";
 import { portfolioFormSchema } from "@shared/schema";
 import { z } from "zod";
 import { setupAuth, isAuthenticated } from "./replitAuth";
@@ -252,6 +253,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(results);
     } catch (error) {
       res.status(500).json({ message: "Failed to search stocks" });
+    }
+  });
+
+  // News API routes
+  app.get("/api/news", async (req, res) => {
+    try {
+      const { q } = req.query;
+      const articles = q
+        ? await getFinancialNews(q as string)
+        : await getTopHeadlines();
+      res.json(articles);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch news" });
+    }
+  });
+
+  app.get("/api/news/stock/:symbol", async (req, res) => {
+    try {
+      const { symbol } = req.params;
+      const articles = await getStockNews(symbol.toUpperCase());
+      res.json(articles);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch stock news" });
+    }
+  });
+
+  // Market intelligence now powered by real news
+  app.get("/api/news/analyze", async (req, res) => {
+    try {
+      const articles = await getTopHeadlines();
+      if (articles.length === 0) {
+        return res.json({ events: [], message: "No news available" });
+      }
+      // Analyze top 3 articles with AI for trading signals
+      const analyzed = [];
+      for (const article of articles.slice(0, 3)) {
+        try {
+          const event = await analyzeNewsEvent({
+            title: article.title,
+            description: article.description,
+            sourceUrl: article.url,
+            publishedAt: new Date(article.publishedAt),
+          });
+          analyzed.push({ ...event, url: article.url, source: article.source });
+        } catch {
+          // Skip articles that fail analysis
+        }
+      }
+      res.json({ events: analyzed });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to analyze news" });
     }
   });
 

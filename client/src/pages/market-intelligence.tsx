@@ -44,16 +44,27 @@ interface UserAlert {
 
 export default function MarketIntelligence() {
   const [marketEvents, setMarketEvents] = useState<MarketEvent[]>([]);
+  const [newsHeadlines, setNewsHeadlines] = useState<any[]>([]);
   const [alerts, setAlerts] = useState<UserAlert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const { toast } = useToast();
 
+  const fetchNewsHeadlines = async () => {
+    try {
+      const response = await apiRequest("GET", "/api/news");
+      const data = await response.json();
+      setNewsHeadlines(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error("Failed to fetch news headlines:", error);
+    }
+  };
+
   const fetchMarketEvents = async () => {
     try {
       const response = await apiRequest("GET", "/api/market-events");
       const data = await response.json();
-      setMarketEvents(data);
+      setMarketEvents(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Failed to fetch market events:", error);
     }
@@ -63,7 +74,7 @@ export default function MarketIntelligence() {
     try {
       const response = await apiRequest("GET", "/api/alerts");
       const data = await response.json();
-      setAlerts(data);
+      setAlerts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error("Failed to fetch alerts:", error);
     }
@@ -72,19 +83,24 @@ export default function MarketIntelligence() {
   const processNews = async () => {
     setIsProcessing(true);
     try {
-      const response = await apiRequest("POST", "/api/market-intelligence/process-news");
+      const response = await apiRequest("GET", "/api/news/analyze");
       const data = await response.json();
       
-      toast({
-        title: "News Processed",
-        description: `Analyzed ${data.count} market events with AI`,
-      });
-      
-      // Refresh the market events
-      await fetchMarketEvents();
+      if (data.events && data.events.length > 0) {
+        setMarketEvents(prev => [...data.events, ...prev]);
+        toast({
+          title: "News Analyzed",
+          description: `AI analyzed ${data.events.length} real news stories for trading signals`,
+        });
+      } else {
+        toast({
+          title: "No actionable events found",
+          description: "No strong trading signals in today's headlines",
+        });
+      }
     } catch (error) {
       toast({
-        title: "Failed to process news",
+        title: "Failed to analyze news",
         variant: "destructive",
       });
     } finally {
@@ -95,7 +111,7 @@ export default function MarketIntelligence() {
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
-      await Promise.all([fetchMarketEvents(), fetchAlerts()]);
+      await Promise.all([fetchMarketEvents(), fetchAlerts(), fetchNewsHeadlines()]);
       setIsLoading(false);
     };
     loadData();
@@ -163,6 +179,46 @@ export default function MarketIntelligence() {
           Process Latest News
         </Button>
       </div>
+
+      {/* Live News Headlines */}
+      {newsHeadlines.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center">
+                <Eye className="h-5 w-5 mr-2 text-blue-600" />
+                Live Financial News
+              </div>
+              <Badge variant="secondary">From News API</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {newsHeadlines.slice(0, 6).map((article, index) => (
+                <div key={index} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                  <div className="flex-1 pr-4">
+                    <p className="text-sm font-medium text-gray-900 leading-snug">{article.title}</p>
+                    {article.description && (
+                      <p className="text-xs text-gray-500 mt-1 line-clamp-1">{article.description}</p>
+                    )}
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-blue-600 font-medium">{article.source}</span>
+                      <span className="text-xs text-gray-400">
+                        {new Date(article.publishedAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                  </div>
+                  {article.url && (
+                    <a href={article.url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                      <ExternalLink className="h-4 w-4 text-gray-400 hover:text-blue-600" />
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Alerts Section */}
       {alerts.length > 0 && (

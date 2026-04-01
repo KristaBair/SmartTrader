@@ -224,33 +224,31 @@ export async function analyzeStockPatterns(
     .join("\n\n");
 
   const prompt = `
-Analyze price patterns for ${ticker} (${companyName}).
+Look at the big price moves for ${ticker} (${companyName}) over the last 100 trading days.
 
-Here are the major dips and peaks over the past ~100 trading days, with news headlines from around each event:
+Here are the times it jumped up or dropped, along with news headlines from around those dates:
 
 ${eventsText}
 
-Identify patterns between news events and price movements. Look for:
-- What types of news cause dips vs peaks
-- Recurring triggers (earnings, macro news, sector events, etc.)
-- How long moves typically last
-- Any predictive signals
+Tell me: what news seems to move this stock up or down? What keeps happening over and over? When you see certain types of news, does the price go up or down?
+
+Use simple, everyday language. Avoid finance jargon. A regular person should be able to understand what you're saying.
 
 Respond in this exact JSON format:
 {
   "ticker": "${ticker}",
-  "patternSummary": "2-3 sentence overview of what drives this stock's price movements",
+  "patternSummary": "In 2-3 sentences, what usually moves this stock's price?",
   "patterns": [
     {
-      "name": "Pattern name",
-      "description": "what the pattern is",
+      "name": "A simple pattern name",
+      "description": "What happens and why (plain English)",
       "occurrences": number,
       "reliability": "High/Medium/Low",
-      "tradingImplication": "what a trader should do when they see this signal"
+      "tradingImplication": "What should someone watching this stock do?"
     }
   ],
-  "keyInsights": ["insight 1", "insight 2", "insight 3"],
-  "whatToWatchFor": "What news/events to monitor for future price moves"
+  "keyInsights": ["simple insight 1", "simple insight 2", "simple insight 3"],
+  "whatToWatchFor": "What kinds of news or events should someone keep an eye on?"
 }
 `;
 

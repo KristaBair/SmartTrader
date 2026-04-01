@@ -100,7 +100,7 @@ export default function Invest() {
               Tell the AI how much you want to invest
             </CardTitle>
             <p className="text-green-100 text-sm">
-              Enter your amount and risk preference - the AI will create a specific, personalized allocation plan.
+              Enter your amount and risk preference. The AI will create a specific, personalized allocation plan.
             </p>
           </CardHeader>
           <CardContent className="p-6">
@@ -127,9 +127,9 @@ export default function Invest() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="conservative">Conservative - Safety first</SelectItem>
-                      <SelectItem value="moderate">Moderate - Balanced growth</SelectItem>
-                      <SelectItem value="aggressive">Aggressive - Maximum growth</SelectItem>
+                      <SelectItem value="conservative">Conservative (Safety first)</SelectItem>
+                      <SelectItem value="moderate">Moderate (Balanced growth)</SelectItem>
+                      <SelectItem value="aggressive">Aggressive (Maximum growth)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

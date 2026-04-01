@@ -1,4 +1,4 @@
-// All user data is stored in localStorage - no accounts, no profiles
+// All user data is stored in localStorage. No accounts, no profiles.
 
 export interface LocalPortfolio {
   cash: number;

@@ -196,7 +196,7 @@ export default function Analytics() {
               Portfolio Setup
             </CardTitle>
             <p className="text-indigo-100 text-sm">
-              Enter your holdings and parameters - all analysis uses real historical price data from Alpha Vantage.
+              Enter your holdings and parameters. All analysis uses real historical price data from Alpha Vantage.
             </p>
           </CardHeader>
           <CardContent className="p-6 space-y-6">

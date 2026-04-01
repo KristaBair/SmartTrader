@@ -38,7 +38,7 @@ export function Onboarding() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      content: "Hi! I'm your personal financial assistant. Tell me about your financial goals - what are you hoping to achieve with your money? Are you saving for retirement, a house, emergency fund, or something else?"
+      content: "Hi! I'm your personal financial assistant. Tell me about your financial goals. What are you hoping to achieve with your money? Are you saving for retirement, a house, emergency fund, or something else?"
     }
   ]);
   const [currentMessage, setCurrentMessage] = useState("");
@@ -135,7 +135,7 @@ export function Onboarding() {
           const prices = await priceResponse.json();
           setStockPrices(prices);
         } catch {
-          // Price fetching is optional - don't block the flow
+          // Price fetching is optional; don't block the flow
         }
       }
     } catch (error) {
@@ -434,7 +434,7 @@ export function Onboarding() {
                   {rec.ticker && rec.action === 'BUY' && (
                     <div className="bg-green-50 border border-green-200 p-3 rounded mb-3">
                       <p className="text-sm font-medium text-green-800">🚀 Ready to Buy:</p>
-                      <p className="font-mono text-green-700 font-bold">BUY {rec.ticker} - ${rec.suggestedAmount.toLocaleString()}</p>
+                      <p className="font-mono text-green-700 font-bold">BUY {rec.ticker}: ${rec.suggestedAmount.toLocaleString()}</p>
                       {stockPrices[rec.ticker] && (
                         <div className="mt-2 pt-2 border-t border-green-200 flex justify-between text-sm">
                           <span className="text-gray-600">

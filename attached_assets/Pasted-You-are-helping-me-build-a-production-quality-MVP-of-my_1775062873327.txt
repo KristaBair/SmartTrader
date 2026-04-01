@@ -1,0 +1,119 @@
+You are helping me build a production-quality MVP of my app called SmartTrader.
+
+Project goal:
+SmartTrader is an AI-assisted stock analysis and portfolio recommendation app for retail users. It should analyze stock data, evaluate a user's current holdings and cash balance, estimate risk and return, and generate clear buy/sell/hold recommendations with reasoning. The app should feel serious, data-driven, and finance-oriented, not gimmicky.
+
+Tech stack:
+- Python backend
+- Clean modular structure
+- Use yfinance or another reliable market data source for historical prices
+- Use pandas, numpy, scikit-learn, and matplotlib only when needed
+- Build for Replit
+- Prefer Flask or FastAPI for backend
+- Simple frontend with HTML/CSS/JavaScript, or a lightweight templated app
+- Keep code readable and separated into files
+
+What I want built:
+1. User profile input
+   - initial cash
+   - monthly contribution
+   - risk tolerance
+   - investment horizon
+   - current holdings
+   - shares owned
+   - optional watchlist
+
+2. Market data pipeline
+   - fetch current and historical stock prices
+   - validate tickers
+   - handle missing data gracefully
+   - cache results when reasonable
+
+3. Portfolio analytics
+   - total portfolio value
+   - gain/loss
+   - allocation by asset
+   - daily returns
+   - volatility
+   - simple Sharpe ratio
+   - max drawdown
+   - concentration risk
+   - cash allocation
+
+4. Recommendation engine
+   - produce buy, sell, or hold suggestions
+   - recommendations must be based on actual logic, not random text
+   - include reasons such as momentum, drawdown recovery potential, volatility, diversification, concentration, cash available, and user risk tolerance
+   - recommendations must never claim certainty
+   - recommendations should say things like:
+     “Consider reducing AMZN by 1 share because it exceeds your target allocation and raises concentration risk.”
+     “Consider buying 2 shares of SPY because you have idle cash and your portfolio is under-diversified.”
+
+5. Predictive logic
+   - include a modest, realistic forecasting component
+   - start with simple models like moving averages, rolling returns, volatility bands, or a baseline regression model
+   - do not overpromise accuracy
+   - clearly separate historical analysis from prediction
+   - every forecast should include a disclaimer that it is probabilistic, not guaranteed
+
+6. SmartTrader dashboard
+   - summary cards
+   - portfolio table
+   - watchlist table
+   - charts for price history and portfolio allocation
+   - recommendation section
+   - risk section
+   - simple, clean, professional appearance
+
+7. Alerts system
+   - create logic for alerts when:
+     - a stock drops by a threshold percent
+     - a stock rises sharply
+     - portfolio concentration exceeds a threshold
+     - cash balance is high enough to deploy
+   - store alerts and show them in the UI
+
+8. Architecture and quality
+   - modular file structure
+   - comments only where useful
+   - type hints where reasonable
+   - input validation
+   - error handling
+   - no giant single-file app
+   - make it easy to extend later
+
+9. Explainability
+   - every recommendation must include:
+     - action
+     - ticker
+     - quantity
+     - confidence level as low/medium/high based on rule strength, not fake AI certainty
+     - short reasoning paragraph
+     - risk note
+
+10. Demo-ready
+   - seed with sample portfolio data
+   - include a few example users or a default portfolio
+   - make it easy to run and demonstrate
+
+Important constraints:
+- Do not turn this into a fake chatbot with generic finance advice
+- Do not invent data when market data is unavailable
+- Do not create unrealistic promises like “best stock to buy”
+- Recommendations must be tied to real calculations
+- Keep the MVP realistic and impressive for grad school and internships
+
+What I want from you first:
+1. Propose the full file structure
+2. Briefly explain the purpose of each file
+3. Then implement the MVP step by step
+4. After each major step, show the code and explain what was added
+5. If something is a design choice, choose the more professional and scalable option
+6. At the end, give me instructions for how to run it in Replit
+
+Also include these stretch features if feasible after the MVP works:
+- Monte Carlo portfolio simulation
+- target allocation engine
+- rebalance suggestions
+- exportable recommendation report
+- paper trading mode

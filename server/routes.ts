@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { analyzePortfolio, getRiskAssessment, suggestInvestment, analyzeStockPatterns, type StockEvent } from "./services/openai";
+import { runQuantAnalysis } from "./services/quantAnalytics";
 import { analyzeNewsEvent, generateAlertMessage, shouldGenerateAlert, getMockNewsEvents } from "./services/marketIntelligence";
 import { getStockQuote, getMultipleQuotes, searchSymbol, getHistoricalPrices } from "./services/alphaVantage";
 import { getFinancialNews, getStockNews, getTopHeadlines, getNewsByDateRange } from "./services/newsApi";
@@ -61,6 +62,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Direct analysis error:", error);
       res.status(500).json({ message: "Analysis failed" });
+    }
+  });
+
+  // Public: full quantitative portfolio analysis (Monte Carlo, VaR, scores, etc.)
+  // This is the main analytics endpoint — it fetches real historical data for each
+  // holding, runs all the statistical calculations, and returns a complete report.
+  app.post("/api/quant/analyze", async (req, res) => {
+    try {
+      const { holdings, cash, riskTolerance, timeHorizon } = req.body;
+      if (!Array.isArray(holdings) || holdings.length === 0) {
+        return res.status(400).json({ message: "At least one holding is required" });
+      }
+      const report = await runQuantAnalysis(
+        holdings,
+        parseFloat(cash) || 0,
+        (["conservative", "moderate", "aggressive"].includes(riskTolerance) ? riskTolerance : "moderate"),
+        parseInt(timeHorizon) || 5
+      );
+      res.json(report);
+    } catch (error) {
+      console.error("Quant analysis error:", error);
+      res.status(500).json({ message: "Quantitative analysis failed. Please try again." });
     }
   });
 

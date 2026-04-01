@@ -2,12 +2,24 @@
 
 ## Overview
 
-SmartTrader is an AI-powered investment tool with three core features:
-1. **Smart Invest** — User enters how much they want to invest right now; AI returns a specific allocation plan across stocks/ETFs with exact dollar amounts.
-2. **Pattern Analyzer** — User looks up any stock ticker; the app fetches 100 days of price history, finds major dips/peaks (>4% single-day moves), pulls news from around each event, and runs AI analysis to surface repeating patterns and what causes them.
-3. **Market Intelligence** — Live financial news with AI trading signal analysis.
+SmartTrader is an AI-powered quantitative investment analysis platform with four core tools:
 
-All user data is stored in localStorage — no accounts or database required for the user-facing features. The backend keeps API keys secure and handles all external API calls.
+1. **Analytics Lab** (`/analytics`) — Quantitative portfolio analysis with real math:
+   - Monte Carlo simulation (1,000 paths, GBM model, monthly time steps, drift-corrected via Itô's lemma)
+   - Parametric VaR (95% confidence, 1-day horizon) and CVaR / Expected Shortfall
+   - Markowitz portfolio variance with uniform pairwise correlation (ρ=0.5)
+   - Sharpe ratios, HHI concentration index, annualized momentum signals
+   - 5-component recommendation scoring system (0-100) with reasoning
+   - Target allocation comparison with deviation analysis
+   - Methodology and assumptions fully disclosed in the UI
+
+2. **Smart Invest** (`/invest`) — User enters how much they want to invest; AI returns a specific allocation plan across stocks/ETFs with exact dollar amounts and reasoning.
+
+3. **Pattern Analyzer** (`/patterns`) — Look up any stock ticker; fetches 100 days of price history, finds major dips/peaks (>4% single-day moves), pulls news from around each event, runs AI analysis to surface repeating patterns.
+
+4. **Market Intelligence** (`/market-intelligence`) — Live financial news with AI trading signal analysis.
+
+All user data stored in localStorage — no accounts needed. Backend secures API keys and handles all external calls (Alpha Vantage, News API, OpenAI).
 
 The system is built as a modern React SPA with an Express.js backend, featuring a clean separation between client and server code with shared type definitions.
 

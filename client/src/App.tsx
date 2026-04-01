@@ -8,6 +8,7 @@ import { Onboarding } from "@/pages/onboarding";
 import MarketIntelligence from "@/pages/market-intelligence";
 import Invest from "@/pages/invest";
 import Patterns from "@/pages/patterns";
+import Analytics from "@/pages/analytics";
 import NotFound from "@/pages/not-found";
 import { getOnboarding } from "@/lib/localStore";
 
@@ -23,6 +24,7 @@ function Router() {
       <Route path="/market-intelligence" component={MarketIntelligence} />
       <Route path="/invest" component={Invest} />
       <Route path="/patterns" component={Patterns} />
+      <Route path="/analytics" component={Analytics} />
       <Route component={NotFound} />
     </Switch>
   );

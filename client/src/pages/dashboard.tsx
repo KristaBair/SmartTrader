@@ -181,7 +181,7 @@ export default function Dashboard() {
                 </div>
                 <h3 className="font-bold text-green-900">Smart Invest</h3>
               </div>
-              <p className="text-sm text-green-800">Tell the AI how much you have — get a specific allocation plan instantly.</p>
+              <p className="text-sm text-green-800">Tell the AI how much you have - get a specific allocation plan instantly.</p>
             </button>
 
             <button
@@ -194,7 +194,7 @@ export default function Dashboard() {
                 </div>
                 <h3 className="font-bold text-purple-900">Pattern Analyzer</h3>
               </div>
-              <p className="text-sm text-purple-800">Look up any stock — see major dips/peaks, the news at the time, and AI-identified patterns.</p>
+              <p className="text-sm text-purple-800">Look up any stock - see major dips/peaks, the news at the time, and AI-identified patterns.</p>
             </button>
 
             <button
@@ -207,7 +207,7 @@ export default function Dashboard() {
                 </div>
                 <h3 className="font-bold text-indigo-900">Analytics Lab</h3>
               </div>
-              <p className="text-sm text-indigo-800">Monte Carlo simulation, VaR, Sharpe ratios, and scored recommendations — all real math.</p>
+              <p className="text-sm text-indigo-800">Monte Carlo simulation, VaR, Sharpe ratios, and scored recommendations - all real math.</p>
             </button>
 
             <button

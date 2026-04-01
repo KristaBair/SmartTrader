@@ -1,5 +1,5 @@
 /**
- * quantAnalytics.ts — The mathematical core of SmartTrader.
+ * quantAnalytics.ts - The mathematical core of SmartTrader.
  *
  * Implements real quant finance calculations:
  *   - Geometric Brownian Motion (GBM) Monte Carlo simulation
@@ -9,13 +9,13 @@
  *   - Momentum signals (20-day and 60-day price return)
  *   - Composite recommendation scoring (5 components, 0-100 scale)
  *
- * All math is kept simple and defensible — no black boxes.
+ * All math is kept simple and defensible - no black boxes.
  * Assumptions are documented in comments so the model is transparent.
  */
 
 import { getHistoricalPrices } from "./alphaVantage";
 
-// ── Statistical helpers ────────────────────────────────────────────────────────
+// -- Statistical helpers --
 
 /**
  * Compute daily log returns from a price series.
@@ -48,12 +48,12 @@ function stdDev(arr: number[]): number {
 }
 
 /**
- * Box-Muller transform — generates a standard normal random variate Z ~ N(0,1).
+ * Box-Muller transform - generates a standard normal random variate Z ~ N(0,1).
  * We implement this ourselves to avoid adding a dependency.
  */
 function sampleNormal(): number {
   let u = 0, v = 0;
-  // Avoid log(0) — keep sampling until non-zero
+  // Avoid log(0) - keep sampling until non-zero
   while (u === 0) u = Math.random();
   while (v === 0) v = Math.random();
   return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
@@ -69,12 +69,12 @@ function percentile(sortedArr: number[], p: number): number {
   return sortedArr[idx];
 }
 
-// Standard normal PDF — used for CVaR calculation
+// Standard normal PDF - used for CVaR calculation
 function normPdf(z: number): number {
   return Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
 }
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// -- Types --
 
 export interface HoldingInput {
   symbol: string;
@@ -112,7 +112,7 @@ export interface MonteCarloResult {
   timeHorizonYears: number;
   numSimulations: number;
   initialValue: number;
-  // Monthly snapshots of percentile portfolio values — used for the fan chart
+  // Monthly snapshots of percentile portfolio values - used for the fan chart
   timeSeries: MonteCarloTimestep[];
   finalOutcomes: { p5: number; p25: number; p50: number; p75: number; p95: number };
   probabilityOfLoss: number;  // % of paths ending below initial value
@@ -144,12 +144,12 @@ export interface QuantReport {
   portfolioAnnualReturn: number;
   portfolioAnnualVol: number;
   portfolioSharpe: number;
-  // Herfindahl-Hirschman Index: Σwᵢ² — ranges 0 (perfect diversity) to 1 (all in one)
+  // Herfindahl-Hirschman Index: Σwᵢ² - ranges 0 (perfect diversity) to 1 (all in one)
   hhi: number;
   // Value at Risk (1-day, 95% confidence, in dollars and %)
   var95Daily: number;
   var95Pct: number;
-  // Conditional VaR / Expected Shortfall — expected loss given that VaR is breached
+  // Conditional VaR / Expected Shortfall - expected loss given that VaR is breached
   cvar95Daily: number;
   monteCarlo: MonteCarloResult;
   scores: RecommendationScore[];
@@ -166,7 +166,7 @@ export interface AllocationTarget {
   deviation: number;
 }
 
-// ── Main analysis function ─────────────────────────────────────────────────────
+// -- Main analysis function --
 
 export async function runQuantAnalysis(
   holdings: HoldingInput[],
@@ -180,13 +180,13 @@ export async function runQuantAnalysis(
   const RISK_FREE_RATE = 0.0525;
 
   // Pairwise correlation assumption between equity holdings.
-  // Using 0.5 (moderate positive correlation) — conservative for US large-cap equities
+  // Using 0.5 (moderate positive correlation) - conservative for US large-cap equities
   // which historically correlate around 0.4-0.7. We document this assumption explicitly.
   const ASSUMED_CORRELATION = 0.5;
 
   const NUM_SIMULATIONS = 1000;
 
-  // ── Step 1: Fetch historical data and compute per-holding statistics ──────
+  // -- Step 1: Fetch historical data and compute per-holding statistics --
 
   const holdingStats: (HoldingStats & { _dailyReturns: number[]; _closes: number[] })[] = [];
 
@@ -195,7 +195,7 @@ export async function runQuantAnalysis(
     const closes = historicalPrices.map(p => p.close);
 
     if (closes.length < 20) {
-      // Not enough data — fall back to reasonable equity defaults with a flag
+      // Not enough data - fall back to reasonable equity defaults with a flag
       holdingStats.push({
         symbol: h.symbol,
         shares: h.shares,
@@ -254,7 +254,7 @@ export async function runQuantAnalysis(
     await new Promise(r => setTimeout(r, 350));
   }
 
-  // ── Step 2: Portfolio weights ─────────────────────────────────────────────
+  // -- Step 2: Portfolio weights --
 
   const totalInvested = holdingStats.reduce((sum, h) => sum + h.currentValue, 0);
   const portfolioValue = totalInvested + Math.max(0, cash);
@@ -264,13 +264,13 @@ export async function runQuantAnalysis(
     h.weight = portfolioValue > 0 ? h.currentValue / portfolioValue : 0;
   });
 
-  // ── Step 3: Portfolio return (weighted average of holding returns) ─────────
+  // -- Step 3: Portfolio return --
 
   const portfolioAnnualReturn = holdingStats.reduce(
     (sum, h) => sum + h.weight * h.annualizedReturn, 0
   );
 
-  // ── Step 4: Portfolio volatility via Markowitz ─────────────────────────────
+  // -- Step 4: Portfolio volatility --
   // σ²_p = Σᵢ wᵢ²σᵢ² + 2ρ Σᵢ<ⱼ wᵢwⱼσᵢσⱼ
   // The second term captures correlation between holdings. With ρ=0.5,
   // diversification reduces portfolio vol but doesn't eliminate it.
@@ -295,13 +295,13 @@ export async function runQuantAnalysis(
     ? (portfolioAnnualReturn - RISK_FREE_RATE) / portfolioAnnualVol
     : 0;
 
-  // ── Step 5: Herfindahl-Hirschman Index ─────────────────────────────────────
+  // -- Step 5: Concentration Index --
   // HHI = Σ wᵢ² (including cash as one "asset")
   // HHI = 1/n for n equally-weighted assets (e.g., 1/5 = 0.20 for 5 holdings)
   // HHI > 0.25 indicates meaningful concentration risk
   const hhi = holdingStats.reduce((sum, h) => sum + h.weight ** 2, 0) + cashWeight ** 2;
 
-  // ── Step 6: Value at Risk (parametric normal, 1-day) ──────────────────────
+  // -- Step 6: Value at Risk --
   // VaR_95 = portfolio × (μ_daily - 1.645 × σ_daily)
   // "With 95% confidence, daily losses won't exceed VaR_95 dollars."
   // Expressed as a positive number (loss amount).
@@ -315,14 +315,14 @@ export async function runQuantAnalysis(
 
   // Conditional VaR (Expected Shortfall) at 95%:
   // CVaR_95 = μ - σ × φ(Z_95) / (1 - 0.95) for normal distribution
-  // This is the expected loss *given* that losses exceed VaR — a more conservative metric
+  // This is the expected loss *given* that losses exceed VaR - a more conservative metric
   const cvar95Pct = Math.max(0, -(dailyMean - dailyVol * normPdf(Z_95) / 0.05));
   const cvar95Daily = cvar95Pct * portfolioValue;
 
-  // ── Step 7: Monte Carlo simulation (GBM) ──────────────────────────────────
+  // -- Step 7: Monte Carlo simulation --
   // Model: S(t + Δt) = S(t) × exp((μ - σ²/2)Δt + σ√Δt × Z)
   //   where μ = portfolio annual return, σ = portfolio annual vol, Z ~ N(0,1)
-  // The term (μ - σ²/2) is the "drift correction" — it converts from arithmetic
+  // The term (μ - σ²/2) is the "drift correction" - it converts from arithmetic
   // to geometric mean, which is the mathematically correct form for GBM.
   // We simulate monthly steps (Δt = 1/12) for interpretability.
 
@@ -343,7 +343,7 @@ export async function runQuantAnalysis(
     allPaths.push(path);
   }
 
-  // Compute cross-sectional percentiles at each month — this creates the fan chart shape
+  // Compute cross-sectional percentiles at each month - this creates the fan chart shape
   const timeSeries: MonteCarloTimestep[] = [];
   for (let t = 0; t <= monthsTotal; t++) {
     const valuesAtT = allPaths.map(p => p[t]).sort((a, b) => a - b);
@@ -380,9 +380,9 @@ export async function runQuantAnalysis(
   // Each component is scored 0-20 and summed for a total of 0-100.
   // Score interpretation:
   //   70-100: Strong buy signal (relative to current position)
-  //   50-69:  Hold — no compelling reason to change position
-  //   30-49:  Consider reducing — several negative signals
-  //   0-29:   Reduce — high concentration, poor momentum, high vol
+  //   50-69:  Hold - no compelling reason to change position
+  //   30-49:  Consider reducing - several negative signals
+  //   0-29:   Reduce - high concentration, poor momentum, high vol
 
   // Max target weight per holding depends on risk tolerance
   const maxWeight = riskTolerance === "conservative" ? 0.15
@@ -390,26 +390,26 @@ export async function runQuantAnalysis(
     : 0.40;
 
   const scores: RecommendationScore[] = holdingStats.map(h => {
-    // Component 1 — Momentum (20-day): clamp [-30%, +30%] → map to [0, 20]
+    // Component 1 - Momentum (20-day): clamp [-30%, +30%] → map to [0, 20]
     const clampedMom = Math.max(-30, Math.min(30, h.momentum20d));
     const momentum = Math.round(((clampedMom + 30) / 60) * 20);
 
-    // Component 2 — Volatility: 20% annual vol → score of 10 (neutral).
+    // Component 2 - Volatility: 20% annual vol → score of 10 (neutral).
     // Each 5pp above 20% reduces score by ~2.5 points.
     const volatility = Math.round(Math.max(0, Math.min(20, 20 - (h.annualizedVolatility - 0.20) * 50)));
 
-    // Component 3 — Concentration: score falls as position weight exceeds target
+    // Component 3 - Concentration: score falls as position weight exceeds target
     const excess = Math.max(0, h.weight - maxWeight);
     const concentration = Math.round(Math.max(0, 20 - (excess / Math.max(maxWeight, 0.01)) * 20));
 
-    // Component 4 — Diversification benefit:
+    // Component 4 - Diversification benefit:
     // Holdings with lower vol than the portfolio reduce portfolio risk → reward them.
     // Score is higher when individual vol is below portfolio vol.
     const diversification = Math.round(
       Math.max(0, Math.min(20, 10 + (portfolioAnnualVol - h.annualizedVolatility) * 25))
     );
 
-    // Component 5 — Cash utilization: reward deploying idle cash into assets with positive momentum
+    // Component 5 - Cash utilization: reward deploying idle cash into assets with positive momentum
     const cashRatio = portfolioValue > 0 ? Math.min(1, cash / portfolioValue) : 0;
     const cashComponent = h.momentum20d > 0
       ? Math.round(cashRatio * 20)
@@ -417,7 +417,7 @@ export async function runQuantAnalysis(
 
     const totalScore = momentum + volatility + concentration + diversification + cashComponent;
 
-    // Action thresholds — calibrated against the score distribution
+    // Action thresholds - calibrated against the score distribution
     let action: "BUY_MORE" | "HOLD" | "REDUCE";
     if (h.weight > maxWeight * 1.3 || (totalScore < 35)) {
       action = "REDUCE";

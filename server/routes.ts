@@ -48,7 +48,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public: analyze portfolio directly (no auth needed — localStorage-based frontend)
+  // Public: analyze portfolio directly (no auth needed - localStorage-based frontend)
   app.post("/api/portfolios/analyze-direct", async (req, res) => {
     try {
       const { cash, investments, riskTolerance, timeline } = req.body;
@@ -66,7 +66,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Public: full quantitative portfolio analysis (Monte Carlo, VaR, scores, etc.)
-  // This is the main analytics endpoint — it fetches real historical data for each
+  // This is the main analytics endpoint - it fetches real historical data for each
   // holding, runs all the statistical calculations, and returns a complete report.
   app.post("/api/quant/analyze", async (req, res) => {
     try {

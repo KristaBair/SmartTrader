@@ -100,7 +100,7 @@ export default function Invest() {
               Tell the AI how much you want to invest
             </CardTitle>
             <p className="text-green-100 text-sm">
-              Enter your amount and risk preference — the AI will create a specific, personalized allocation plan.
+              Enter your amount and risk preference - the AI will create a specific, personalized allocation plan.
             </p>
           </CardHeader>
           <CardContent className="p-6">
@@ -127,9 +127,9 @@ export default function Invest() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="conservative">Conservative — Safety first</SelectItem>
-                      <SelectItem value="moderate">Moderate — Balanced growth</SelectItem>
-                      <SelectItem value="aggressive">Aggressive — Maximum growth</SelectItem>
+                      <SelectItem value="conservative">Conservative - Safety first</SelectItem>
+                      <SelectItem value="moderate">Moderate - Balanced growth</SelectItem>
+                      <SelectItem value="aggressive">Aggressive - Maximum growth</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -174,7 +174,7 @@ export default function Invest() {
                   <CheckCircle2 className="h-5 w-5 text-green-600 mt-0.5 flex-shrink-0" />
                   <div>
                     <h3 className="font-semibold text-gray-900 mb-1">
-                      Plan for ${plan.totalAmount.toLocaleString()} — {riskTolerance} risk
+                      Plan for ${plan.totalAmount.toLocaleString()} - {riskTolerance} risk
                     </h3>
                     <p className="text-gray-700">{plan.summary}</p>
                   </div>
@@ -247,7 +247,7 @@ export default function Invest() {
                     <p className="font-medium text-yellow-900 mb-1">Risk Note</p>
                     <p className="text-sm text-yellow-800">{plan.riskNote}</p>
                     <p className="text-xs text-yellow-700 mt-2">
-                      This is AI-generated information for educational purposes only — not financial advice.
+                      This is AI-generated information for educational purposes only - not financial advice.
                     </p>
                   </div>
                 </div>

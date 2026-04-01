@@ -4,7 +4,7 @@
 
 SmartTrader is an AI-powered quantitative investment analysis platform with four core tools:
 
-1. **Analytics Lab** (`/analytics`) — Quantitative portfolio analysis with real math:
+1. **Analytics Lab** (`/analytics`) - Quantitative portfolio analysis with real math:
    - Monte Carlo simulation (1,000 paths, GBM model, monthly time steps, drift-corrected via Itô's lemma)
    - Parametric VaR (95% confidence, 1-day horizon) and CVaR / Expected Shortfall
    - Markowitz portfolio variance with uniform pairwise correlation (ρ=0.5)
@@ -13,13 +13,13 @@ SmartTrader is an AI-powered quantitative investment analysis platform with four
    - Target allocation comparison with deviation analysis
    - Methodology and assumptions fully disclosed in the UI
 
-2. **Smart Invest** (`/invest`) — User enters how much they want to invest; AI returns a specific allocation plan across stocks/ETFs with exact dollar amounts and reasoning.
+2. **Smart Invest** (`/invest`) - User enters how much they want to invest; AI returns a specific allocation plan across stocks/ETFs with exact dollar amounts and reasoning.
 
-3. **Pattern Analyzer** (`/patterns`) — Look up any stock ticker; fetches 100 days of price history, finds major dips/peaks (>4% single-day moves), pulls news from around each event, runs AI analysis to surface repeating patterns.
+3. **Pattern Analyzer** (`/patterns`) - Look up any stock ticker; fetches 100 days of price history, finds major dips/peaks (>4% single-day moves), pulls news from around each event, runs AI analysis to surface repeating patterns.
 
-4. **Market Intelligence** (`/market-intelligence`) — Live financial news with AI trading signal analysis.
+4. **Market Intelligence** (`/market-intelligence`) - Live financial news with AI trading signal analysis.
 
-All user data stored in localStorage — no accounts needed. Backend secures API keys and handles all external calls (Alpha Vantage, News API, OpenAI).
+All user data stored in localStorage - no accounts needed. Backend secures API keys and handles all external calls (Alpha Vantage, News API, OpenAI).
 
 The system is built as a modern React SPA with an Express.js backend, featuring a clean separation between client and server code with shared type definitions.
 

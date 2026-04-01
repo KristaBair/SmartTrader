@@ -1,10 +1,10 @@
 /**
- * analytics.tsx — SmartTrader Quantitative Analytics Dashboard
+ * analytics.tsx - SmartTrader Quantitative Analytics Dashboard
  *
  * Displays real statistical analysis: Monte Carlo simulation, VaR,
  * risk/return scatter, composite recommendation scores, and allocation targets.
  *
- * All numbers shown come from actual calculations described in the Methodology tab —
+ * All numbers shown come from actual calculations described in the Methodology tab -
  * nothing is made up or hardcoded.
  */
 
@@ -30,7 +30,7 @@ import {
   Info, Loader2, Plus, Trash2, BookOpen, ShieldAlert, Target
 } from "lucide-react";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// -- Types --
 
 interface Holding { symbol: string; shares: number }
 interface HoldingStats {
@@ -63,7 +63,7 @@ interface QuantReport {
   assumptions: { label: string; value: string }[];
 }
 
-// ── Helper formatters ──────────────────────────────────────────────────────────
+// -- Helper formatters --────
 
 const fmt = {
   dollar: (n: number) => `$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
@@ -86,7 +86,7 @@ const confidenceColors: Record<string, string> = {
 const scoreBarColor = (score: number) =>
   score >= 65 ? "#16a34a" : score >= 45 ? "#2563eb" : "#dc2626";
 
-// ── Main component ─────────────────────────────────────────────────────────────
+// -- Main component --
 
 export default function Analytics() {
   const [, navigate] = useLocation();
@@ -109,7 +109,7 @@ export default function Analytics() {
   const [isLoading, setIsLoading] = useState(false);
   const [report, setReport] = useState<QuantReport | null>(null);
 
-  // ── Input management ──────────────────────────────────────────────────────
+  // -- Input management --
 
   const addHolding = () => setHoldings(h => [...h, { symbol: "", shares: 1 }]);
   const removeHolding = (i: number) => setHoldings(h => h.filter((_, idx) => idx !== i));
@@ -149,7 +149,7 @@ export default function Analytics() {
 
   // ── Sub-components ─────────────────────────────────────────────────────────
 
-  // KPI card — used in summary tab
+  // KPI card - used in summary tab
   const KpiCard = ({ label, value, sub, color = "text-gray-900", warning = false }: {
     label: string; value: string; sub?: string; color?: string; warning?: boolean
   }) => (
@@ -196,7 +196,7 @@ export default function Analytics() {
               Portfolio Setup
             </CardTitle>
             <p className="text-indigo-100 text-sm">
-              Enter your holdings and parameters — all analysis uses real historical price data from Alpha Vantage.
+              Enter your holdings and parameters - all analysis uses real historical price data from Alpha Vantage.
             </p>
           </CardHeader>
           <CardContent className="p-6 space-y-6">
@@ -268,7 +268,7 @@ export default function Analytics() {
               className="w-full bg-indigo-700 hover:bg-indigo-800 text-white font-semibold py-3 text-base"
             >
               {isLoading ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Running analysis — fetching data & simulating {(1000).toLocaleString()} paths...</>
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Running analysis - fetching data & simulating {(1000).toLocaleString()} paths...</>
               ) : (
                 <><FlaskConical className="h-4 w-4 mr-2" />Run Quantitative Analysis</>
               )}
@@ -400,7 +400,7 @@ export default function Analytics() {
               <Card className="border-0 shadow-md">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    Monte Carlo Simulation — {report.monteCarlo.numSimulations.toLocaleString()} Paths × {report.monteCarlo.timeHorizonYears} Years
+                    Monte Carlo Simulation - {report.monteCarlo.numSimulations.toLocaleString()} Paths × {report.monteCarlo.timeHorizonYears} Years
                     <Badge variant="outline" className="text-xs">GBM Model</Badge>
                   </CardTitle>
                   <p className="text-sm text-gray-600">
@@ -682,7 +682,7 @@ export default function Analytics() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <BookOpen className="h-5 w-5 text-indigo-600" />
-                    Model Methodology — Plain English
+                    Model Methodology - Plain English
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="prose prose-sm max-w-none space-y-6">
@@ -690,11 +690,11 @@ export default function Analytics() {
                   {[
                     {
                       title: "1. Data & Returns",
-                      body: `We fetch the last ~100 trading days of daily closing prices for each holding using Alpha Vantage's TIME_SERIES_DAILY endpoint. From those prices we compute daily log returns: r_t = ln(P_t / P_{t-1}). Log returns are preferred over simple percentage returns in quantitative finance because they're additive across time periods and more closely approximate a normal distribution — a key assumption in most risk models.`,
+                      body: `We fetch the last ~100 trading days of daily closing prices for each holding using Alpha Vantage's TIME_SERIES_DAILY endpoint. From those prices we compute daily log returns: r_t = ln(P_t / P_{t-1}). Log returns are preferred over simple percentage returns in quantitative finance because they're additive across time periods and more closely approximate a normal distribution - a key assumption in most risk models.`,
                     },
                     {
                       title: "2. Annualization",
-                      body: `Daily statistics are scaled to annual figures using the standard convention of 252 trading days per year. Annualized return = mean(r_t) × 252. Annualized volatility = std(r_t) × √252. This assumes returns are i.i.d. (independent and identically distributed) — a simplification that works reasonably well for liquid equities.`,
+                      body: `Daily statistics are scaled to annual figures using the standard convention of 252 trading days per year. Annualized return = mean(r_t) × 252. Annualized volatility = std(r_t) × √252. This assumes returns are i.i.d. (independent and identically distributed) - a simplification that works reasonably well for liquid equities.`,
                     },
                     {
                       title: "3. Sharpe Ratio",
@@ -710,15 +710,15 @@ export default function Analytics() {
                     },
                     {
                       title: "6. Monte Carlo Simulation (GBM)",
-                      body: `We simulate 1,000 independent portfolio value paths using Geometric Brownian Motion: S(t+Δt) = S(t) × exp((μ − σ²/2)Δt + σ√Δt × Z), where Z ~ N(0,1) is a random normal draw and Δt = 1/12 (monthly steps). The term (μ − σ²/2) is the Itô drift correction — it converts from arithmetic to geometric mean, which is the mathematically correct form for multiplicative price processes. We use Box-Muller transform to generate the normal random numbers. The fan chart shows 5th, 25th, 50th, 75th, and 95th percentiles of the 1,000 simulations at each monthly time step.`,
+                      body: `We simulate 1,000 independent portfolio value paths using Geometric Brownian Motion: S(t+Δt) = S(t) × exp((μ − σ²/2)Δt + σ√Δt × Z), where Z ~ N(0,1) is a random normal draw and Δt = 1/12 (monthly steps). The term (μ − σ²/2) is the Itô drift correction - it converts from arithmetic to geometric mean, which is the mathematically correct form for multiplicative price processes. We use Box-Muller transform to generate the normal random numbers. The fan chart shows 5th, 25th, 50th, 75th, and 95th percentiles of the 1,000 simulations at each monthly time step.`,
                     },
                     {
                       title: "7. Herfindahl-Hirschman Index (HHI)",
-                      body: `HHI = Σ wᵢ², summed across all holdings including cash. HHI = 1/n for n equally-weighted holdings (e.g., 0.10 for 10 equal positions). HHI = 1.0 means 100% in one asset. We flag HHI > 0.25 as concentrated — this is the threshold used in antitrust economics (though applied here to portfolio concentration, not market structure).`,
+                      body: `HHI = Σ wᵢ², summed across all holdings including cash. HHI = 1/n for n equally-weighted holdings (e.g., 0.10 for 10 equal positions). HHI = 1.0 means 100% in one asset. We flag HHI > 0.25 as concentrated - this is the threshold used in antitrust economics (though applied here to portfolio concentration, not market structure).`,
                     },
                     {
                       title: "8. Recommendation Score (0–100)",
-                      body: `Each holding receives a composite score built from five 0–20 sub-components: (1) 20-day momentum — positive price trend boosts the score; (2) volatility — lower annualized vol scores higher, with 20% as the neutral midpoint; (3) concentration — penalizes positions exceeding the target max weight for the selected risk profile; (4) diversification benefit — rewards holdings whose individual vol is below the portfolio vol, indicating correlation benefit; (5) cash utilization — rewards buying momentum names when idle cash exceeds 5% of the portfolio. Actions: BUY_MORE if score ≥ 65 and cash available; REDUCE if score < 35 or weight exceeds 1.3× target; HOLD otherwise.`,
+                      body: `Each holding receives a composite score built from five 0–20 sub-components: (1) 20-day momentum - positive price trend boosts the score; (2) volatility - lower annualized vol scores higher, with 20% as the neutral midpoint; (3) concentration - penalizes positions exceeding the target max weight for the selected risk profile; (4) diversification benefit - rewards holdings whose individual vol is below the portfolio vol, indicating correlation benefit; (5) cash utilization - rewards buying momentum names when idle cash exceeds 5% of the portfolio. Actions: BUY_MORE if score ≥ 65 and cash available; REDUCE if score < 35 or weight exceeds 1.3× target; HOLD otherwise.`,
                     },
                   ].map(section => (
                     <div key={section.title} className="bg-gray-50 rounded-lg p-5 border">
@@ -757,7 +757,7 @@ export default function Analytics() {
                     </h3>
                     <ul className="text-sm text-yellow-900 space-y-2 list-disc list-inside">
                       <li>Historical return and volatility are <strong>not predictors</strong> of future performance. Markets change regime.</li>
-                      <li>Uniform correlation (ρ = 0.5) is a simplification. Real pairwise correlations vary and tend to spike toward 1.0 during market crises — when you need diversification most.</li>
+                      <li>Uniform correlation (ρ = 0.5) is a simplification. Real pairwise correlations vary and tend to spike toward 1.0 during market crises - when you need diversification most.</li>
                       <li>GBM assumes log-normally distributed returns. Real returns have fat tails (kurtosis &gt; 3) and negative skew, meaning extreme events happen more often than the model predicts. VaR likely <strong>underestimates</strong> tail risk.</li>
                       <li>The model uses ~100 days of data. Short estimation windows amplify statistical noise. Estimates from sparse data should be treated with skepticism.</li>
                       <li>Sharpe ratios computed from short periods are unreliable. A Sharpe of 1.5 on 3 months of data means almost nothing statistically.</li>

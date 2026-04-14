@@ -1,484 +1,443 @@
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useMutation } from "@tanstack/react-query";
-import { portfolioFormSchema, type PortfolioFormData, type Portfolio } from "@shared/schema";
-import { apiRequest } from "@/lib/queryClient";
+// Portfolio holdings manager.
+// Shows each position as a row the user can edit in-place.
+// Every change saves immediately to localStorage so nothing is lost.
+// The "Analyze" button sends the current state to the AI.
+
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PlusCircle, Brain, Upload, Image, X, Loader2, Edit, Camera } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Brain, Plus, Trash2, Check, X, Pencil, DollarSign, TrendingUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { useEffect, useState, useCallback } from "react";
+import { savePortfolio, type LocalPortfolio } from "@/lib/localStore";
 
-interface PortfolioInputProps {
-  onSubmit: (data: PortfolioFormData) => Promise<void>;
-  isLoading: boolean;
-  portfolio?: Portfolio;
+interface Holding {
+  symbol: string;
+  name: string;
+  shares: number;
+  averagePrice: number;
 }
 
-export default function PortfolioInput({ onSubmit, isLoading, portfolio }: PortfolioInputProps) {
+interface PortfolioInputProps {
+  userId?: string;
+  portfolio: LocalPortfolio | null;
+  onPortfolioChange: (portfolio: LocalPortfolio) => void;
+  onAnalyze: (portfolio: LocalPortfolio) => void;
+  isAnalyzing: boolean;
+}
+
+// Build an empty portfolio shell so we always have a valid object to work from
+function emptyPortfolio(): LocalPortfolio {
+  return {
+    cash: 0,
+    investments: [],
+    riskTolerance: "moderate",
+    timeline: "long_term",
+    lastUpdated: new Date().toISOString(),
+  };
+}
+
+export default function PortfolioInput({
+  userId,
+  portfolio,
+  onPortfolioChange,
+  onAnalyze,
+  isAnalyzing,
+}: PortfolioInputProps) {
   const { toast } = useToast();
-  const [riskAssessment, setRiskAssessment] = useState<{
-    level: string;
-    score: number;
-    explanation: string;
-  } | null>(null);
-  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [isProcessingImage, setIsProcessingImage] = useState(false);
 
-  const form = useForm<PortfolioFormData>({
-    resolver: zodResolver(portfolioFormSchema),
-    defaultValues: {
-      cash: "",
-      investments: "",
-      initialInvestment: "",
-      monthlyContribution: "",
-      riskTolerance: "Moderate",
-      timeline: "Medium-term (1-5 years)",
-    },
-  });
+  // Local working copy — changes here flow out via onPortfolioChange
+  const [cash, setCash] = useState<string>(String(portfolio?.cash ?? ""));
+  const [holdings, setHoldings] = useState<Holding[]>(portfolio?.investments ?? []);
+  const [riskTolerance, setRiskTolerance] = useState(portfolio?.riskTolerance ?? "moderate");
+  const [timeline, setTimeline] = useState(portfolio?.timeline ?? "long_term");
 
-  // Update form when portfolio data is loaded
+  // Keep local state in sync if the parent reloads the portfolio (e.g. after sign-in)
   useEffect(() => {
     if (portfolio) {
-      const investmentsText = portfolio.investments
-        .map(inv => `${inv.symbol}: $${inv.amount}`)
-        .join(', ');
-      
-      form.reset({
-        cash: portfolio.cash,
-        investments: investmentsText,
-        initialInvestment: portfolio.initialInvestment || "",
-        monthlyContribution: portfolio.monthlyContribution || "",
-        riskTolerance: portfolio.riskTolerance as any,
-        timeline: portfolio.timeline as any,
-      });
+      setCash(String(portfolio.cash));
+      setHoldings(portfolio.investments ?? []);
+      setRiskTolerance(portfolio.riskTolerance);
+      setTimeline(portfolio.timeline);
     }
-  }, [portfolio, form]);
+  }, [portfolio?.lastUpdated]);
 
-  // Risk assessment mutation
-  const riskAssessmentMutation = useMutation({
-    mutationFn: async ({ investments, riskTolerance }: { investments: string; riskTolerance: string }) => {
-      const response = await apiRequest("POST", "/api/risk-assessment", { investments, riskTolerance });
-      return response.json();
-    },
-    onSuccess: (data) => {
-      setRiskAssessment(data);
-    },
-    onError: (error) => {
-      toast({
-        title: "Risk Assessment Failed",
-        description: "Unable to assess risk at this time.",
-        variant: "destructive",
-      });
-    },
-  });
+  // ── Add position form state ──────────────────────────────────────────────
+  const [addSymbol, setAddSymbol] = useState("");
+  const [addShares, setAddShares] = useState("");
+  const [addPrice, setAddPrice] = useState("");
+  const [showAddForm, setShowAddForm] = useState(false);
 
-  const handleSubmit = async (data: PortfolioFormData) => {
-    await onSubmit(data);
-    
-    // Trigger risk assessment
-    riskAssessmentMutation.mutate({
-      investments: data.investments,
-      riskTolerance: data.riskTolerance,
-    });
-  };
+  // ── Inline edit state ────────────────────────────────────────────────────
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const [editShares, setEditShares] = useState("");
+  const [editPrice, setEditPrice] = useState("");
 
-  const watchedInvestments = form.watch("investments");
-  const watchedRiskTolerance = form.watch("riskTolerance");
-
-  // Auto-trigger risk assessment when investments or risk tolerance changes
-  useEffect(() => {
-    if (watchedInvestments && watchedRiskTolerance) {
-      const timeoutId = setTimeout(() => {
-        riskAssessmentMutation.mutate({
-          investments: watchedInvestments,
-          riskTolerance: watchedRiskTolerance,
-        });
-      }, 1000);
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [watchedInvestments, watchedRiskTolerance]);
-
-  // Image processing functions
-  const handleImageUpload = useCallback((file: File) => {
-    if (file.size > 10 * 1024 * 1024) { // 10MB limit
-      toast({
-        title: "File too large",
-        description: "Please upload an image smaller than 10MB.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (!file.type.startsWith('image/')) {
-      toast({
-        title: "Invalid file type",
-        description: "Please upload a valid image file.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setUploadedImage(file);
-    
-    // Create preview
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setImagePreview(e.target?.result as string);
+  // ── Core save helper ─────────────────────────────────────────────────────
+  // Builds the LocalPortfolio object and persists it, then tells the parent
+  function persist(updatedHoldings: Holding[], updatedCash?: string) {
+    const newPortfolio: LocalPortfolio = {
+      cash: parseFloat(updatedCash ?? cash) || 0,
+      investments: updatedHoldings,
+      riskTolerance,
+      timeline,
+      lastUpdated: new Date().toISOString(),
     };
-    reader.readAsDataURL(file);
-  }, [toast]);
+    savePortfolio(newPortfolio, userId);
+    onPortfolioChange(newPortfolio);
+    return newPortfolio;
+  }
 
-  const processImageWithAI = async () => {
-    if (!uploadedImage) return;
+  // ── Cash update ──────────────────────────────────────────────────────────
+  function handleCashBlur() {
+    persist(holdings, cash);
+  }
 
-    setIsProcessingImage(true);
-    try {
-      const formData = new FormData();
-      formData.append('image', uploadedImage);
+  // ── Settings update ──────────────────────────────────────────────────────
+  function handleSettingsChange(field: "riskTolerance" | "timeline", value: string) {
+    if (field === "riskTolerance") setRiskTolerance(value);
+    if (field === "timeline") setTimeline(value);
 
-      const response = await fetch('/api/portfolio/extract-from-image', {
-        method: 'POST',
-        body: formData,
-      });
+    // Persist with updated setting immediately
+    const newPortfolio: LocalPortfolio = {
+      cash: parseFloat(cash) || 0,
+      investments: holdings,
+      riskTolerance: field === "riskTolerance" ? value : riskTolerance,
+      timeline: field === "timeline" ? value : timeline,
+      lastUpdated: new Date().toISOString(),
+    };
+    savePortfolio(newPortfolio, userId);
+    onPortfolioChange(newPortfolio);
+  }
 
-      if (!response.ok) {
-        throw new Error('Failed to process image');
-      }
+  // ── Add a new position ───────────────────────────────────────────────────
+  function handleAdd() {
+    const sym = addSymbol.trim().toUpperCase();
+    const shares = parseFloat(addShares);
+    const price = parseFloat(addPrice);
 
-      const extractedData = await response.json();
-      
-      // Update form with extracted data
-      if (extractedData.cash) {
-        form.setValue('cash', extractedData.cash);
-      }
-      if (extractedData.investments) {
-        form.setValue('investments', extractedData.investments);
-      }
-      if (extractedData.initialInvestment) {
-        form.setValue('initialInvestment', extractedData.initialInvestment);
-      }
-      if (extractedData.monthlyContribution) {
-        form.setValue('monthlyContribution', extractedData.monthlyContribution);
-      }
-      
-      toast({
-        title: "Portfolio data extracted!",
-        description: "AI successfully extracted your portfolio information from the image.",
-      });
+    if (!sym) { toast({ title: "Enter a ticker symbol", variant: "destructive" }); return; }
+    if (isNaN(shares) || shares <= 0) { toast({ title: "Enter a valid number of shares", variant: "destructive" }); return; }
+    if (isNaN(price) || price <= 0) { toast({ title: "Enter a valid price per share", variant: "destructive" }); return; }
 
-      // Clear the image after processing
-      clearImage();
-      
-    } catch (error) {
-      toast({
-        title: "Image processing failed",
-        description: "Could not extract portfolio data from the image. Please try again or enter manually.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessingImage(false);
+    // If the same symbol exists, average it in rather than creating a duplicate row
+    const existing = holdings.findIndex(h => h.symbol === sym);
+    let updated: Holding[];
+    if (existing >= 0) {
+      const prev = holdings[existing];
+      const totalShares = prev.shares + shares;
+      const avgPrice = (prev.shares * prev.averagePrice + shares * price) / totalShares;
+      updated = holdings.map((h, i) =>
+        i === existing ? { ...h, shares: totalShares, averagePrice: avgPrice } : h
+      );
+    } else {
+      updated = [...holdings, { symbol: sym, name: sym, shares, averagePrice: price }];
     }
-  };
 
-  const clearImage = () => {
-    setUploadedImage(null);
-    setImagePreview(null);
-  };
+    setHoldings(updated);
+    persist(updated);
+    setAddSymbol("");
+    setAddShares("");
+    setAddPrice("");
+    setShowAddForm(false);
+    toast({ title: `${sym} added to your portfolio` });
+  }
 
-  const onDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      handleImageUpload(files[0]);
+  // ── Start editing a row ──────────────────────────────────────────────────
+  function startEdit(idx: number) {
+    setEditIdx(idx);
+    setEditShares(String(holdings[idx].shares));
+    setEditPrice(String(holdings[idx].averagePrice));
+  }
+
+  // ── Commit an edit ───────────────────────────────────────────────────────
+  function commitEdit(idx: number) {
+    const shares = parseFloat(editShares);
+    const price = parseFloat(editPrice);
+    if (isNaN(shares) || shares <= 0 || isNaN(price) || price <= 0) {
+      toast({ title: "Enter valid shares and price", variant: "destructive" });
+      return;
     }
-  }, [handleImageUpload]);
+    const updated = holdings.map((h, i) =>
+      i === idx ? { ...h, shares, averagePrice: price } : h
+    );
+    setHoldings(updated);
+    persist(updated);
+    setEditIdx(null);
+  }
 
-  const onDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-  }, []);
+  // ── Remove a position ────────────────────────────────────────────────────
+  function removeHolding(idx: number) {
+    const sym = holdings[idx].symbol;
+    const updated = holdings.filter((_, i) => i !== idx);
+    setHoldings(updated);
+    persist(updated);
+    toast({ title: `${sym} removed from your portfolio` });
+  }
+
+  // ── Send current state to AI ─────────────────────────────────────────────
+  function handleAnalyze() {
+    if (holdings.length === 0 && (parseFloat(cash) || 0) === 0) {
+      toast({ title: "Add at least one holding or some cash first", variant: "destructive" });
+      return;
+    }
+    const current: LocalPortfolio = {
+      cash: parseFloat(cash) || 0,
+      investments: holdings,
+      riskTolerance,
+      timeline,
+      lastUpdated: new Date().toISOString(),
+    };
+    onAnalyze(current);
+  }
+
+  const totalValue = holdings.reduce((sum, h) => sum + h.shares * h.averagePrice, 0) + (parseFloat(cash) || 0);
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center">
-          <PlusCircle className="text-primary mr-3" />
-          Portfolio Input
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <TrendingUp className="h-5 w-5 text-primary" />
+          My Portfolio
         </CardTitle>
+        {totalValue > 0 && (
+          <p className="text-sm text-gray-500">
+            Total value: <span className="font-semibold text-gray-800">${totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+          </p>
+        )}
       </CardHeader>
-      <CardContent>
-        {/* Manual vs Automatic Input Tabs */}
-        <Tabs defaultValue="manual" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="manual" className="flex items-center gap-2">
-              <Edit className="h-4 w-4" />
-              Manual Entry
-            </TabsTrigger>
-            <TabsTrigger value="automatic" className="flex items-center gap-2">
-              <Camera className="h-4 w-4" />
-              Upload Screenshot
-            </TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="automatic" className="mt-6">
-            {/* Image Upload Section */}
-            <div className="p-4 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
-          <div className="text-center">
-            <Upload className="mx-auto h-8 w-8 text-gray-400 mb-2" />
-            <h3 className="text-sm font-medium text-gray-900 mb-1">
-              Upload Portfolio Screenshot
-            </h3>
-            <p className="text-xs text-gray-500 mb-4">
-              Upload a screenshot of your brokerage account and let AI extract your portfolio data
-            </p>
-            
-            {!imagePreview ? (
-              <div
-                onDrop={onDrop}
-                onDragOver={onDragOver}
-                className="border-2 border-dashed border-gray-300 rounded-lg p-6 hover:border-blue-400 transition-colors cursor-pointer"
-              >
-                <input
-                  type="file"
-                  id="portfolio-image"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleImageUpload(file);
-                  }}
-                />
-                <label htmlFor="portfolio-image" className="cursor-pointer">
-                  <Image className="mx-auto h-12 w-12 text-gray-400 mb-2" />
-                  <p className="text-sm text-gray-600">
-                    Drag & drop an image here, or <span className="text-blue-600 underline">click to browse</span>
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">PNG, JPG, WEBP up to 10MB</p>
-                </label>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="relative inline-block">
-                  <img 
-                    src={imagePreview} 
-                    alt="Portfolio screenshot preview" 
-                    className="max-w-full max-h-48 rounded-lg shadow-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={clearImage}
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                    data-testid="button-clear-image"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-                <Button
-                  type="button"
-                  onClick={processImageWithAI}
-                  disabled={isProcessingImage}
-                  className="bg-blue-600 hover:bg-blue-700"
-                  data-testid="button-process-image"
-                >
-                  {isProcessingImage ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Processing with AI...
-                    </>
-                  ) : (
-                    <>
-                      <Brain className="mr-2 h-4 w-4" />
-                      Extract Portfolio Data
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
+
+      <CardContent className="space-y-4">
+
+        {/* ── Cash balance ──────────────────────────────────────────────── */}
+        <div className="flex items-center gap-2">
+          <DollarSign className="h-4 w-4 text-gray-400 flex-shrink-0" />
+          <div className="flex-1">
+            <label className="text-xs text-gray-500 block mb-1">Cash available</label>
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">$</span>
+              <Input
+                type="number"
+                min={0}
+                value={cash}
+                onChange={e => setCash(e.target.value)}
+                onBlur={handleCashBlur}
+                placeholder="0"
+                className="pl-7 h-9 text-sm"
+              />
+            </div>
           </div>
         </div>
-          </TabsContent>
-          
-          <TabsContent value="manual" className="mt-6">
-            <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="cash"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Current Cash Available</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
-                      <Input
-                        {...field}
-                        type="number"
-                        placeholder="10,000"
-                        className="pl-8"
-                        data-testid="input-cash"
-                      />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
 
-            <FormField
-              control={form.control}
-              name="initialInvestment"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Initial Investment</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
-                      <Input
-                        {...field}
-                        type="number"
-                        placeholder="50,000"
-                        className="pl-8"
-                        data-testid="input-initial-investment"
-                      />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+        {/* ── Holdings list ──────────────────────────────────────────────── */}
+        <div>
+          <p className="text-xs text-gray-500 mb-2">Holdings</p>
 
-            <FormField
-              control={form.control}
-              name="monthlyContribution"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Monthly Contribution</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
-                      <Input
-                        {...field}
-                        type="number"
-                        placeholder="1,000"
-                        className="pl-8"
-                        data-testid="input-monthly-contribution"
-                      />
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="investments"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Current Investments</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      placeholder="AAPL: $5000, GOOGL: $3000, BTC: $2000..."
-                      rows={4}
-                      className="resize-none"
-                      data-testid="input-investments"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="riskTolerance"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Risk Tolerance</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger data-testid="select-risk-tolerance">
-                        <SelectValue placeholder="Select risk tolerance" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="Conservative">Conservative</SelectItem>
-                      <SelectItem value="Moderate">Moderate</SelectItem>
-                      <SelectItem value="Aggressive">Aggressive</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="timeline"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Investment Timeline</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger data-testid="select-timeline">
-                        <SelectValue placeholder="Select timeline" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="Short-term (< 1 year)">Short-term (&lt; 1 year)</SelectItem>
-                      <SelectItem value="Medium-term (1-5 years)">Medium-term (1-5 years)</SelectItem>
-                      <SelectItem value="Long-term (5+ years)">Long-term (5+ years)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <Button 
-              type="submit" 
-              className="w-full" 
-              disabled={isLoading}
-              data-testid="button-analyze"
-            >
-              <Brain className="mr-2 h-4 w-4" />
-              {isLoading ? "Analyzing..." : "Analyze with AI"}
-            </Button>
-          </form>
-        </Form>
-          </TabsContent>
-        </Tabs>
-
-        {/* Risk Assessment Display */}
-        {riskAssessment && (
-          <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200" data-testid="risk-assessment-display">
-            <h4 className="font-medium text-blue-900 mb-2">Risk Assessment</h4>
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-blue-700">Current Risk Level</span>
-              <span className="text-sm font-medium text-blue-900" data-testid="text-risk-level">
-                {riskAssessment.level}
-              </span>
-            </div>
-            <div className="w-full bg-blue-200 rounded-full h-2 mb-2">
-              <div 
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300" 
-                style={{ width: `${riskAssessment.score}%` }}
-                data-testid="progress-risk-score"
-              ></div>
-            </div>
-            <p className="text-xs text-blue-700" data-testid="text-risk-explanation">
-              {riskAssessment.explanation}
+          {holdings.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-3 border border-dashed rounded-lg">
+              No positions yet. Add one below.
             </p>
+          )}
+
+          <div className="space-y-2">
+            {holdings.map((h, idx) => {
+              const posValue = h.shares * h.averagePrice;
+              const isEditing = editIdx === idx;
+
+              return (
+                <div
+                  key={h.symbol}
+                  className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2"
+                >
+                  {isEditing ? (
+                    // ── Edit mode ────────────────────────────────────────
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="font-mono font-bold text-xs flex-shrink-0">
+                        {h.symbol}
+                      </Badge>
+                      <div className="flex-1 grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-[10px] text-gray-400">Shares</label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={editShares}
+                            onChange={e => setEditShares(e.target.value)}
+                            className="h-7 text-xs px-2"
+                            autoFocus
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-gray-400">Avg price ($)</label>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={editPrice}
+                            onChange={e => setEditPrice(e.target.value)}
+                            className="h-7 text-xs px-2"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => commitEdit(idx)}
+                        className="text-green-600 hover:text-green-700 flex-shrink-0"
+                        title="Save"
+                      >
+                        <Check className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => setEditIdx(null)}
+                        className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                        title="Cancel"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    // ── View mode ────────────────────────────────────────
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="font-mono font-bold text-xs flex-shrink-0">
+                        {h.symbol}
+                      </Badge>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm text-gray-700">
+                          {h.shares} shares @ ${h.averagePrice.toFixed(2)}
+                        </span>
+                        <span className="text-xs text-gray-400 ml-2">
+                          = ${posValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => startEdit(idx)}
+                        className="text-gray-400 hover:text-blue-600 flex-shrink-0"
+                        title="Edit"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => removeHolding(idx)}
+                        className="text-gray-400 hover:text-red-500 flex-shrink-0"
+                        title="Remove"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
+        </div>
+
+        {/* ── Add position form ──────────────────────────────────────────── */}
+        {showAddForm ? (
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 space-y-2">
+            <p className="text-xs font-medium text-blue-700">Add position</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-[10px] text-gray-500">Ticker</label>
+                <Input
+                  value={addSymbol}
+                  onChange={e => setAddSymbol(e.target.value.toUpperCase())}
+                  placeholder="AAPL"
+                  className="h-8 text-sm font-mono"
+                  autoFocus
+                  onKeyDown={e => e.key === "Enter" && handleAdd()}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-500">Shares</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={addShares}
+                  onChange={e => setAddShares(e.target.value)}
+                  placeholder="10"
+                  className="h-8 text-sm"
+                  onKeyDown={e => e.key === "Enter" && handleAdd()}
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-gray-500">Price paid ($)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={addPrice}
+                  onChange={e => setAddPrice(e.target.value)}
+                  placeholder="150.00"
+                  className="h-8 text-sm"
+                  onKeyDown={e => e.key === "Enter" && handleAdd()}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={handleAdd} className="h-7 text-xs">
+                <Check className="h-3 w-3 mr-1" /> Add
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { setShowAddForm(false); setAddSymbol(""); setAddShares(""); setAddPrice(""); }}
+                className="h-7 text-xs text-gray-500"
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full h-8 text-xs border-dashed"
+            onClick={() => setShowAddForm(true)}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Add position
+          </Button>
         )}
+
+        {/* ── Settings ──────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-2 gap-3 pt-1">
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Risk tolerance</label>
+            <Select value={riskTolerance} onValueChange={v => handleSettingsChange("riskTolerance", v)}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="conservative">Conservative</SelectItem>
+                <SelectItem value="moderate">Moderate</SelectItem>
+                <SelectItem value="aggressive">Aggressive</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Timeline</label>
+            <Select value={timeline} onValueChange={v => handleSettingsChange("timeline", v)}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="short_term">Short term (under 1 yr)</SelectItem>
+                <SelectItem value="medium_term">Medium term (1 to 5 yrs)</SelectItem>
+                <SelectItem value="long_term">Long term (5+ yrs)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {/* ── Analyze button ─────────────────────────────────────────────── */}
+        <Button
+          onClick={handleAnalyze}
+          className="w-full"
+          disabled={isAnalyzing}
+        >
+          <Brain className="mr-2 h-4 w-4" />
+          {isAnalyzing ? "Analyzing..." : "Analyze with AI"}
+        </Button>
+
       </CardContent>
     </Card>
   );

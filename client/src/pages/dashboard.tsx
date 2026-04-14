@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import {
   getPortfolio, savePortfolio, getOnboarding, clearAll,
-  getRecommendations, saveRecommendations
+  getRecommendations, saveRecommendations, type LocalPortfolio
 } from "@/lib/localStore";
 import { useUser } from "@/context/UserContext";
 import PortfolioInput from "@/components/portfolio-input";
@@ -35,42 +35,25 @@ export default function Dashboard() {
     if (saved.length > 0) setRecommendations(saved);
   }, [user?.id]);
 
-  // Called when the user submits the portfolio form.
-  // Saves locally first (instant), then fires off the AI analysis.
-  const handlePortfolioSubmit = async (portfolioData: any) => {
+  // Called by the portfolio editor whenever the user changes anything.
+  // The component already saved to localStorage — we just keep React state in sync.
+  const handlePortfolioChange = (updated: LocalPortfolio) => {
+    setPortfolio(updated);
+  };
+
+  // Called when the user clicks "Analyze with AI".
+  // The portfolio has already been saved — we just run the analysis on it.
+  const handleAnalyze = async (current: LocalPortfolio) => {
     try {
       setIsAnalyzing(true);
 
-      const investments = typeof portfolioData.investments === "string"
-        ? portfolioData.investments.split(",").map((entry: string) => {
-            const [symbol, amount] = entry.trim().split(":");
-            return {
-              symbol: symbol?.trim() || "",
-              name: symbol?.trim() || "",
-              shares: 1,
-              averagePrice: parseFloat(amount?.replace(/[$,\s]/g, "") || "0"),
-            };
-          }).filter((e: any) => e.symbol)
-        : portfolioData.investments || portfolio?.investments || [];
-
-      const updatedPortfolio = {
-        cash: parseFloat(portfolioData.cash) || 0,
-        investments,
-        riskTolerance: portfolioData.riskTolerance || "moderate",
-        timeline: portfolioData.timeline || "long_term",
-        lastUpdated: new Date().toISOString(),
-      };
-
-      savePortfolio(updatedPortfolio, user?.id);
-      setPortfolio(updatedPortfolio);
-
       const response = await apiRequest("POST", "/api/portfolios/analyze-direct", {
-        cash: updatedPortfolio.cash,
-        investments: updatedPortfolio.investments
+        cash: current.cash,
+        investments: current.investments
           .map((i: any) => `${i.symbol}: $${i.averagePrice || 0}`)
           .join(", "),
-        riskTolerance: updatedPortfolio.riskTolerance,
-        timeline: updatedPortfolio.timeline,
+        riskTolerance: current.riskTolerance,
+        timeline: current.timeline,
       });
       const result = await response.json();
 
@@ -79,9 +62,9 @@ export default function Dashboard() {
         saveRecommendations(result.recommendations, user?.id);
       }
 
-      toast({ title: "Analysis Complete", description: "Your portfolio has been analyzed." });
+      toast({ title: "Analysis complete", description: "Your portfolio has been analyzed." });
     } catch (error) {
-      toast({ title: "Analysis Failed", description: "Please try again.", variant: "destructive" });
+      toast({ title: "Analysis failed", description: "Please try again.", variant: "destructive" });
     } finally {
       setIsAnalyzing(false);
       setLastRefresh(new Date());
@@ -257,9 +240,11 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
             <PortfolioInput
-              onSubmit={handlePortfolioSubmit}
-              isLoading={isAnalyzing}
-              portfolio={portfolio as any}
+              userId={user?.id}
+              portfolio={portfolio as LocalPortfolio}
+              onPortfolioChange={handlePortfolioChange}
+              onAnalyze={handleAnalyze}
+              isAnalyzing={isAnalyzing}
             />
           </div>
 

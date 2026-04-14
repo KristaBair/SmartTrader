@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -62,7 +62,10 @@ const popularTickers = ["AAPL", "TSLA", "NVDA", "MSFT", "GOOGL", "AMZN", "META",
 export default function Patterns() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const [ticker, setTicker] = useState("");
+
+  // Pre-fill ticker from URL param: /patterns?ticker=AAPL (used by trading alerts)
+  const urlTicker = new URLSearchParams(window.location.search).get("ticker") || "";
+  const [ticker, setTicker] = useState(urlTicker.toUpperCase());
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<PatternResult | null>(null);
 
@@ -88,6 +91,13 @@ export default function Patterns() {
       setIsLoading(false);
     }
   };
+
+  // Auto-analyze if a ticker was passed in the URL via ?ticker=AAPL
+  useEffect(() => {
+    if (urlTicker) {
+      analyze(urlTicker.toUpperCase());
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

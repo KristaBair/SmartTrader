@@ -404,6 +404,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Real-time trading signals: fetch live headlines, GPT scans them for actionable BUY/SELL signals
+  app.get("/api/trading-signals", async (req, res) => {
+    try {
+      const articles = await getTopHeadlines();
+      if (articles.length === 0) {
+        return res.json({ signals: [], generatedAt: new Date().toISOString() });
+      }
+
+      // Build a compact news summary for GPT
+      const newsSummary = articles
+        .slice(0, 10)
+        .map((a: any, i: number) => `${i + 1}. ${a.title}${a.description ? " — " + a.description.slice(0, 120) : ""}`)
+        .join("\n");
+
+      const signalPrompt = `You are a sharp trading analyst. Read these financial news headlines and identify clear, confident BUY or SELL signals for specific stocks or ETFs.
+
+NEWS HEADLINES:
+${newsSummary}
+
+Rules:
+- Only include signals where you have >70% confidence
+- Only BUY or SELL (not HOLD/WATCH)
+- Ticker must be a real US stock or ETF symbol
+- Keep the reason under 15 words, plain English, no jargon
+- Max 5 signals total
+- If no strong signals exist, return an empty array
+
+Respond in JSON only:
+{
+  "signals": [
+    {
+      "ticker": "SPY",
+      "action": "BUY",
+      "reason": "Fed rate pause boosts broad market outlook",
+      "confidence": 82,
+      "urgency": "high",
+      "newsHeadline": "Federal Reserve signals pause in rate hikes"
+    }
+  ]
+}`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-5",
+        messages: [{ role: "user", content: signalPrompt }],
+        max_tokens: 600,
+        response_format: { type: "json_object" },
+      });
+
+      const raw = response.choices[0].message.content || '{"signals":[]}';
+      const parsed = JSON.parse(raw);
+      const signals = (parsed.signals || []).map((s: any, i: number) => ({
+        ...s,
+        id: `${s.ticker}_${Date.now()}_${i}`,
+      }));
+
+      res.json({ signals, generatedAt: new Date().toISOString() });
+    } catch (error) {
+      console.error("Trading signals error:", error);
+      res.json({ signals: [], generatedAt: new Date().toISOString() });
+    }
+  });
+
   app.get("/api/news/stock/:symbol", async (req, res) => {
     try {
       const { symbol } = req.params;

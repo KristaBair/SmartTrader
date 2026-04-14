@@ -665,80 +665,80 @@ Respond in JSON only:
     }
   });
 
+  // Portfolio image scanning — accepts any brokerage screenshot and uses GPT-4o vision
+  // to pull out holdings. Returns structured JSON the portfolio editor can merge directly.
   app.post('/api/portfolio/extract-from-image', upload.single('image'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: 'No image file provided' });
       }
 
-      const imageBuffer = req.file.buffer;
-      const base64Image = imageBuffer.toString('base64');
+      const base64Image = req.file.buffer.toString('base64');
       const mimeType = req.file.mimetype;
 
-      // Use OpenAI Vision to analyze the image
       const response = await openai.chat.completions.create({
-        model: "gpt-4o", // GPT-4 with vision capabilities
+        model: "gpt-4o",
         messages: [
           {
             role: "system",
-            content: `You are a financial data extraction expert. Analyze the provided portfolio screenshot and extract the following information:
+            content: `You are a financial data extraction expert. Analyze the brokerage screenshot carefully and extract every visible position.
 
-1. Available cash balance
-2. Individual stock/ETF positions with their symbols and current values
-3. Initial investment amount (if visible)
-4. Monthly contribution amount (if visible)
-
-Return the data in this exact JSON format:
+Return ONLY valid JSON in this exact shape — no markdown, no explanation:
 {
-  "cash": "dollar amount as string (e.g., '5000')",
-  "investments": "comma-separated list of symbol:amount pairs (e.g., 'AAPL: $5000, GOOGL: $3000, SPY: $2000')",
-  "initialInvestment": "dollar amount as string (e.g., '50000') or empty if not found",
-  "monthlyContribution": "dollar amount as string (e.g., '1000') or empty if not found"
+  "cash": 1234.56,
+  "holdings": [
+    {
+      "symbol": "AAPL",
+      "shares": 10,
+      "averagePrice": 172.50,
+      "totalValue": 1725.00
+    }
+  ]
 }
 
-Extract only the numbers without dollar signs for cash, initialInvestment, and monthlyContribution. For investments, use the format shown above with symbols and dollar amounts.
-
-If you cannot find specific information, leave those fields empty. Focus on accuracy over completeness.`
+Rules:
+- "cash" is any uninvested cash or money market balance. Use 0 if not visible.
+- "symbol" must be the ticker (e.g. AAPL, not "Apple Inc"). Uppercase letters only.
+- "shares" is the number of shares held. Use the exact number shown.
+- "averagePrice" is the average cost per share or the current price if cost basis is not shown.
+- "totalValue" is the total market value of that position.
+- If shares are not shown but total value is, set shares to 1 and averagePrice to the total value.
+- Omit positions you cannot read clearly rather than guessing.
+- Numbers must be plain numbers, no dollar signs or commas.`
           },
           {
             role: "user",
             content: [
-              {
-                type: "text",
-                text: "Please extract portfolio data from this brokerage account screenshot:"
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:${mimeType};base64,${base64Image}`
-                }
-              }
+              { type: "text", text: "Extract all portfolio positions from this screenshot:" },
+              { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } }
             ]
           }
         ],
         response_format: { type: "json_object" },
-        max_completion_tokens: 1000,
+        max_completion_tokens: 1200,
       });
 
-      const extractedData = JSON.parse(response.choices[0].message.content || '{}');
-      
-      // Validate and clean up the extracted data
-      const portfolioData = {
-        cash: extractedData.cash || '',
-        investments: extractedData.investments || '',
-        initialInvestment: extractedData.initialInvestment || '',
-        monthlyContribution: extractedData.monthlyContribution || '',
-      };
+      const raw = response.choices[0].message.content || '{}';
+      const extracted = JSON.parse(raw);
 
-      console.log('Extracted portfolio data:', portfolioData);
-      res.json(portfolioData);
+      // Normalise and validate each holding before returning
+      const holdings = (extracted.holdings || [])
+        .filter((h: any) => h.symbol && typeof h.symbol === 'string')
+        .map((h: any) => ({
+          symbol: String(h.symbol).toUpperCase().replace(/[^A-Z.]/g, ''),
+          shares: Math.abs(parseFloat(h.shares) || 1),
+          averagePrice: Math.abs(parseFloat(h.averagePrice) || parseFloat(h.totalValue) || 0),
+        }))
+        .filter((h: any) => h.symbol && h.averagePrice > 0);
+
+      res.json({
+        cash: Math.abs(parseFloat(extracted.cash) || 0),
+        holdings,
+      });
 
     } catch (error) {
-      console.error('Image processing error:', error);
-      res.status(500).json({ 
-        message: 'Failed to process image', 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      });
+      console.error('Image scan error:', error);
+      res.status(500).json({ message: 'Failed to read the image. Please try a clearer screenshot.' });
     }
   });
 

@@ -3,13 +3,13 @@
 // Every change saves immediately to localStorage so nothing is lost.
 // The "Analyze" button sends the current state to the AI.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Brain, Plus, Trash2, Check, X, Pencil, DollarSign, TrendingUp } from "lucide-react";
+import { Brain, Plus, Trash2, Check, X, Pencil, DollarSign, TrendingUp, Camera, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { savePortfolio, type LocalPortfolio } from "@/lib/localStore";
 
@@ -63,6 +63,10 @@ export default function PortfolioInput({
       setTimeline(portfolio.timeline);
     }
   }, [portfolio?.lastUpdated]);
+
+  // ── Photo scan state ─────────────────────────────────────────────────────
+  const [isScanningPhoto, setIsScanningPhoto] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   // ── Add position form state ──────────────────────────────────────────────
   const [addSymbol, setAddSymbol] = useState("");
@@ -177,6 +181,81 @@ export default function PortfolioInput({
     toast({ title: `${sym} removed from your portfolio` });
   }
 
+  // ── Scan a photo of a brokerage account ─────────────────────────────────
+  // Uploads the image to GPT-4o vision, gets back structured holdings,
+  // then merges them into the current portfolio (averaging in duplicates).
+  async function handlePhotoFile(file: File) {
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Please select an image file", variant: "destructive" });
+      return;
+    }
+    setIsScanningPhoto(true);
+    try {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const res = await fetch("/api/portfolio/extract-from-image", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Scan failed");
+      }
+
+      const data = await res.json();
+      const extracted: Array<{ symbol: string; shares: number; averagePrice: number }> = data.holdings || [];
+
+      if (extracted.length === 0) {
+        toast({
+          title: "No positions found",
+          description: "The image may be too blurry or not show a portfolio. Try a clearer screenshot.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Merge extracted holdings into the current list, averaging duplicates
+      let merged = [...holdings];
+      for (const ext of extracted) {
+        const existing = merged.findIndex(h => h.symbol === ext.symbol);
+        if (existing >= 0) {
+          const prev = merged[existing];
+          const totalShares = prev.shares + ext.shares;
+          const avgPrice = (prev.shares * prev.averagePrice + ext.shares * ext.averagePrice) / totalShares;
+          merged = merged.map((h, i) =>
+            i === existing ? { ...h, shares: totalShares, averagePrice: avgPrice } : h
+          );
+        } else {
+          merged.push({ symbol: ext.symbol, name: ext.symbol, shares: ext.shares, averagePrice: ext.averagePrice });
+        }
+      }
+
+      // If the photo also had a cash balance, use it (only if our cash field is currently 0)
+      const photoCash = parseFloat(data.cash) || 0;
+      const newCash = (parseFloat(cash) || 0) === 0 && photoCash > 0 ? String(photoCash) : cash;
+      if (newCash !== cash) setCash(newCash);
+
+      setHoldings(merged);
+      persist(merged, newCash);
+
+      toast({
+        title: `Imported ${extracted.length} position${extracted.length !== 1 ? "s" : ""} from photo`,
+        description: "Review the numbers and adjust anything that looks off.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Could not read the photo",
+        description: err.message || "Try a clearer screenshot with visible ticker symbols.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsScanningPhoto(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  }
+
   // ── Send current state to AI ─────────────────────────────────────────────
   function handleAnalyze() {
     if (holdings.length === 0 && (parseFloat(cash) || 0) === 0) {
@@ -197,11 +276,41 @@ export default function PortfolioInput({
 
   return (
     <Card>
+      {/* Hidden file input — triggered by the "Scan from photo" button */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={e => {
+          const file = e.target.files?.[0];
+          if (file) handlePhotoFile(file);
+        }}
+      />
+
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <TrendingUp className="h-5 w-5 text-primary" />
-          My Portfolio
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            My Portfolio
+          </CardTitle>
+          {/* Scan from photo — opens file picker, sends image to GPT-4o vision */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1.5"
+            onClick={() => photoInputRef.current?.click()}
+            disabled={isScanningPhoto}
+            title="Take a screenshot of your brokerage account and import holdings automatically"
+          >
+            {isScanningPhoto ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Camera className="h-3.5 w-3.5" />
+            )}
+            {isScanningPhoto ? "Scanning..." : "Scan from photo"}
+          </Button>
+        </div>
         {totalValue > 0 && (
           <p className="text-sm text-gray-500">
             Total value: <span className="font-semibold text-gray-800">${totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>

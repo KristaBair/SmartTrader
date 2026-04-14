@@ -19,7 +19,15 @@ SmartTrader is an AI-powered quantitative investment analysis platform with four
 
 4. **Market Intelligence** (`/market-intelligence`) - Live financial news with AI trading signal analysis.
 
-All user data stored in localStorage - no accounts needed. Backend secures API keys and handles all external calls (Alpha Vantage, News API, OpenAI).
+All user data stored in localStorage. Each user profile is namespaced by a unique ID so multiple people can share one device. Backend secures API keys and handles all external calls (Alpha Vantage, News API, OpenAI).
+
+## User Profiles and Authentication
+- Sign-in screen lists existing profiles; users pick theirs and enter a 4-digit passcode
+- New accounts: first name, last name, 4-digit passcode (confirmed twice)
+- All profile data namespaced in localStorage by user ID: `smarttrader_onboarding_{id}`, `smarttrader_portfolio_{id}`, `smarttrader_recommendations_{id}`
+- Session persisted via `smarttrader_current_user` key; cleared on sign-out
+- React context (`UserContext`) provides `user`, `signIn`, `signOut` to all pages
+- No backend changes required; fully client-side
 
 The system is built as a modern React SPA with an Express.js backend, featuring a clean separation between client and server code with shared type definitions.
 

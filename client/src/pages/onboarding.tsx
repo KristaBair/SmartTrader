@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { saveOnboarding, savePortfolio } from "@/lib/localStore";
+import { useUser } from "@/context/UserContext";
 import type { ContributionFrequency } from "@shared/schema";
 
 type OnboardingStep = "choice" | "savings" | "chat" | "suggestions";
@@ -30,6 +31,7 @@ interface ChatMessage {
 
 export function Onboarding() {
   const [, navigate] = useLocation();
+  const { user } = useUser();
   const [step, setStep] = useState<OnboardingStep>("choice");
   const [savingsAmount, setSavingsAmount] = useState("");
   const [contributionFrequency, setContributionFrequency] = useState<ContributionFrequency>("irregular");
@@ -48,15 +50,15 @@ export function Onboarding() {
   const { toast } = useToast();
 
   const handlePortfolioChoice = async () => {
-    try {
-      // Save onboarding choice for authenticated users
-      await apiRequest("POST", "/api/onboarding", {
-        onboardingType: "portfolio",
-        completed: new Date()
-      });
-    } catch (error) {
-      console.log("Failed to save onboarding data:", error);
-    }
+    // Mark onboarding as complete for this user (they have a portfolio already)
+    saveOnboarding({
+      completed: true,
+      savingsAmount: 0,
+      contributionFrequency: "irregular",
+      contributionAmount: 0,
+      suggestions: null,
+      completedAt: new Date().toISOString(),
+    }, user?.id);
     navigate("/dashboard");
   };
 
@@ -165,7 +167,7 @@ export function Onboarding() {
         riskTolerance: "moderate",
         timeline: "long_term",
         lastUpdated: new Date().toISOString(),
-      });
+      }, user?.id);
 
       saveOnboarding({
         completed: true,
@@ -174,7 +176,7 @@ export function Onboarding() {
         contributionAmount: parseFloat(contributionAmount),
         suggestions,
         completedAt: new Date().toISOString(),
-      });
+      }, user?.id);
 
       toast({
         title: "Portfolio saved! 🎉",
@@ -193,7 +195,7 @@ export function Onboarding() {
       contributionAmount: parseFloat(contributionAmount) || 0,
       suggestions,
       completedAt: new Date().toISOString(),
-    });
+    }, user?.id);
     navigate("/dashboard");
   };
 
@@ -203,7 +205,7 @@ export function Onboarding() {
         <div className="max-w-4xl w-full">
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-gray-900 mb-4">
-              Welcome to SmartTrader! 🚀
+              Welcome{user ? `, ${user.firstName}` : ""}! 🚀
             </h1>
             <p className="text-xl text-gray-600">
               Let's get your investment journey started the right way

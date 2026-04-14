@@ -1,40 +1,42 @@
 import { useState, useEffect } from "react";
 import { apiRequest } from "@/lib/queryClient";
-import { getPortfolio, savePortfolio, getOnboarding, clearAll } from "@/lib/localStore";
+import {
+  getPortfolio, savePortfolio, getOnboarding, clearAll,
+  getRecommendations, saveRecommendations
+} from "@/lib/localStore";
+import { useUser } from "@/context/UserContext";
 import PortfolioInput from "@/components/portfolio-input";
 import AIRecommendations from "@/components/ai-recommendations";
 import MarketTrends from "@/components/market-trends";
 import PortfolioOverview from "@/components/portfolio-overview";
 import PortfolioGrowthChart from "@/components/portfolio-growth-chart";
 import { useToast } from "@/hooks/use-toast";
-import { Bell, RefreshCw, TrendingUp, BarChart2, Trash2, DollarSign, Brain, FlaskConical } from "lucide-react";
+import { Bell, RefreshCw, TrendingUp, BarChart2, Trash2, DollarSign, Brain, FlaskConical, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import type { Recommendation } from "@shared/schema";
 
 export default function Dashboard() {
   const [, navigate] = useLocation();
+  const { user, signOut } = useUser();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  const [portfolio, setPortfolio] = useState(getPortfolio());
+  const [portfolio, setPortfolio] = useState(getPortfolio(user?.id));
   const { toast } = useToast();
 
-  const onboarding = getOnboarding();
+  const onboarding = getOnboarding(user?.id);
 
-  // Load saved recommendations from localStorage on mount
+  // Load saved recommendations for the current user
   useEffect(() => {
-    const saved = localStorage.getItem("smarttrader_recommendations");
-    if (saved) {
-      try { setRecommendations(JSON.parse(saved)); } catch {}
-    }
-  }, []);
+    const saved = getRecommendations(user?.id);
+    if (saved.length > 0) setRecommendations(saved);
+  }, [user?.id]);
 
   const handlePortfolioSubmit = async (portfolioData: any) => {
     try {
       setIsAnalyzing(true);
 
-      // Parse investments string into structured array
       const investments = typeof portfolioData.investments === "string"
         ? portfolioData.investments.split(",").map((entry: string) => {
             const [symbol, amount] = entry.trim().split(":");
@@ -55,10 +57,9 @@ export default function Dashboard() {
         lastUpdated: new Date().toISOString(),
       };
 
-      savePortfolio(updatedPortfolio);
+      savePortfolio(updatedPortfolio, user?.id);
       setPortfolio(updatedPortfolio);
 
-      // Run AI analysis directly with portfolio data
       const response = await apiRequest("POST", "/api/portfolios/analyze-direct", {
         cash: updatedPortfolio.cash,
         investments: updatedPortfolio.investments
@@ -71,7 +72,7 @@ export default function Dashboard() {
 
       if (result.recommendations) {
         setRecommendations(result.recommendations);
-        localStorage.setItem("smarttrader_recommendations", JSON.stringify(result.recommendations));
+        saveRecommendations(result.recommendations, user?.id);
       }
 
       toast({ title: "Analysis Complete", description: "Your portfolio has been analyzed." });
@@ -84,9 +85,14 @@ export default function Dashboard() {
   };
 
   const handleReset = () => {
-    clearAll();
-    localStorage.removeItem("smarttrader_recommendations");
+    clearAll(user?.id);
     navigate("/onboarding");
+  };
+
+  const handleSignOut = () => {
+    signOut();
+    // navigate to "/" which will render SignIn since user is null
+    navigate("/");
   };
 
   return (
@@ -149,10 +155,27 @@ export default function Dashboard() {
                 size="sm"
                 onClick={handleReset}
                 className="text-red-500 hover:text-red-700"
-                title="Reset & start over"
+                title="Reset portfolio and start over"
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
+              {/* User avatar + sign out */}
+              {user && (
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                    {user.firstName[0]}{user.lastName[0]}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleSignOut}
+                    className="text-gray-500 hover:text-gray-800"
+                    title="Sign out"
+                  >
+                    <LogOut className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -161,7 +184,7 @@ export default function Dashboard() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-900 mb-2">
-            Welcome back, Trader
+            Welcome back, {user ? user.firstName : "Trader"}
           </h2>
           <p className="text-gray-600 mb-6">
             {onboarding?.savingsAmount
@@ -239,33 +262,17 @@ export default function Dashboard() {
               recommendations={recommendations}
               isLoading={isAnalyzing}
             />
-            <MarketTrends />
-            <PortfolioGrowthChart portfolio={portfolio as any} isLoading={false} />
-            <PortfolioOverview portfolio={portfolio as any} isLoading={false} />
           </div>
         </div>
 
-        <div className="mt-8 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="text-sm text-yellow-800">
-            <p className="font-medium mb-1">Investment Disclaimer</p>
-            <p>
-              Recommendations are for informational purposes only and not financial advice.
-              Past performance does not guarantee future results. All investments carry risk.
-              Please consult a qualified financial advisor before making investment decisions.
-            </p>
+        <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <PortfolioOverview portfolio={portfolio as any} />
+          <div className="space-y-8">
+            <PortfolioGrowthChart portfolio={portfolio as any} />
+            <MarketTrends />
           </div>
         </div>
       </div>
-
-      {isAnalyzing && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-8 max-w-sm mx-4 text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Analyzing Your Portfolio</h3>
-            <p className="text-gray-600">AI is processing market data and generating recommendations...</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

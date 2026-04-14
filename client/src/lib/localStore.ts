@@ -1,16 +1,11 @@
-// Multi-user localStorage store.
-// Each user has a first name, last name, and 4-digit passcode.
-// All data (portfolio, onboarding, recommendations) is namespaced by user ID.
-
-// -------------------------------------------------------------------------
-// Types
-// -------------------------------------------------------------------------
+// Everything in this app lives in localStorage — no backend accounts needed.
+// Each user gets their own little namespace so profiles never bleed into each other.
 
 export interface UserProfile {
   id: string;
   firstName: string;
   lastName: string;
-  passcode: string; // 4-digit string, stored directly (no server = no crypto needed)
+  passcode: string; // plain 4-digit string — no server means no need for hashing
   createdAt: string;
   lastLogin: string;
 }
@@ -32,27 +27,23 @@ export interface LocalOnboarding {
   completedAt: string;
 }
 
-// -------------------------------------------------------------------------
-// Storage keys
-// -------------------------------------------------------------------------
-
+// All keys in one place so typos don't silently break things
 const KEYS = {
-  USERS: "smarttrader_users",
-  CURRENT_USER: "smarttrader_current_user",
+  USERS: "smarttrader_users",            // list of all profiles on this device
+  CURRENT_USER: "smarttrader_current_user", // who's logged in right now
   onboarding: (uid: string) => `smarttrader_onboarding_${uid}`,
   portfolio: (uid: string) => `smarttrader_portfolio_${uid}`,
   recommendations: (uid: string) => `smarttrader_recommendations_${uid}`,
 };
 
-// -------------------------------------------------------------------------
-// User profile helpers
-// -------------------------------------------------------------------------
+// ── User profile helpers ───────────────────────────────────────────────────
 
 export function getAllUsers(): UserProfile[] {
   try {
     const raw = localStorage.getItem(KEYS.USERS);
     return raw ? JSON.parse(raw) : [];
   } catch {
+    // localStorage can throw in private browsing modes
     return [];
   }
 }
@@ -63,6 +54,7 @@ function saveAllUsers(users: UserProfile[]) {
 
 export function createUser(firstName: string, lastName: string, passcode: string): UserProfile {
   const user: UserProfile = {
+    // timestamp + random suffix keeps IDs unique even if two profiles are created very fast
     id: `u_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
     firstName: firstName.trim(),
     lastName: lastName.trim(),
@@ -76,6 +68,7 @@ export function createUser(firstName: string, lastName: string, passcode: string
   return user;
 }
 
+// Looks up a user by name + passcode — used at sign-in
 export function findUser(firstName: string, lastName: string, passcode: string): UserProfile | null {
   const users = getAllUsers();
   return users.find(
@@ -86,6 +79,7 @@ export function findUser(firstName: string, lastName: string, passcode: string):
   ) ?? null;
 }
 
+// Stamp the login time so the sign-in screen can show "last login: today"
 export function updateUserLastLogin(userId: string) {
   const users = getAllUsers();
   const idx = users.findIndex(u => u.id === userId);
@@ -95,9 +89,8 @@ export function updateUserLastLogin(userId: string) {
   }
 }
 
-// -------------------------------------------------------------------------
-// Current session
-// -------------------------------------------------------------------------
+// ── Current session ────────────────────────────────────────────────────────
+// We just store the user ID so we can restore the session on page reload.
 
 export function getCurrentUserId(): string | null {
   return localStorage.getItem(KEYS.CURRENT_USER);
@@ -117,9 +110,8 @@ export function getCurrentUser(): UserProfile | null {
   return getAllUsers().find(u => u.id === id) ?? null;
 }
 
-// -------------------------------------------------------------------------
-// Per-user onboarding
-// -------------------------------------------------------------------------
+// ── Per-user onboarding ────────────────────────────────────────────────────
+// Onboarding answers are saved so we don't re-ask them every visit.
 
 export function getOnboarding(userId?: string): LocalOnboarding | null {
   const uid = userId ?? getCurrentUserId();
@@ -144,9 +136,8 @@ export function clearOnboarding(userId?: string) {
   localStorage.removeItem(KEYS.onboarding(uid));
 }
 
-// -------------------------------------------------------------------------
-// Per-user portfolio
-// -------------------------------------------------------------------------
+// ── Per-user portfolio ─────────────────────────────────────────────────────
+// Saved so the dashboard pre-fills with the user's last known holdings.
 
 export function getPortfolio(userId?: string): LocalPortfolio | null {
   const uid = userId ?? getCurrentUserId();
@@ -162,6 +153,7 @@ export function getPortfolio(userId?: string): LocalPortfolio | null {
 export function savePortfolio(data: LocalPortfolio, userId?: string) {
   const uid = userId ?? getCurrentUserId();
   if (!uid) return;
+  // Stamp lastUpdated automatically so we never forget
   localStorage.setItem(
     KEYS.portfolio(uid),
     JSON.stringify({ ...data, lastUpdated: new Date().toISOString() })
@@ -174,9 +166,8 @@ export function clearPortfolio(userId?: string) {
   localStorage.removeItem(KEYS.portfolio(uid));
 }
 
-// -------------------------------------------------------------------------
-// Per-user recommendations
-// -------------------------------------------------------------------------
+// ── Per-user recommendations ───────────────────────────────────────────────
+// Cached so the dashboard shows last AI results instantly while a new analysis runs.
 
 export function getRecommendations(userId?: string): any[] {
   const uid = userId ?? getCurrentUserId();
@@ -195,9 +186,8 @@ export function saveRecommendations(data: any[], userId?: string) {
   localStorage.setItem(KEYS.recommendations(uid), JSON.stringify(data));
 }
 
-// -------------------------------------------------------------------------
-// Clear everything for a user (account deletion / sign-out wipe)
-// -------------------------------------------------------------------------
+// ── Wipe everything for a user ─────────────────────────────────────────────
+// Called on sign-out or if a user wants to reset their data.
 
 export function clearAll(userId?: string) {
   const uid = userId ?? getCurrentUserId();

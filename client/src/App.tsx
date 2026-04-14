@@ -1,3 +1,6 @@
+// App entry point. Sets up providers, handles auth gating, and wires up routes.
+// Trading signal polling also lives here so alerts work on every page.
+
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -19,24 +22,26 @@ import NotFound from "@/pages/not-found";
 function Router() {
   const { user, isSignedIn } = useUser();
 
-  // Poll for trading signals only when user is signed in
+  // Only poll for signals when someone is actually signed in — no point hitting
+  // the API on the sign-in screen
   const { newSignals } = useSignalPolling(isSignedIn);
 
-  // Not signed in? Always show sign-in screen
+  // If no one is signed in, the whole app collapses to the sign-in screen
   if (!isSignedIn) {
     return <SignIn />;
   }
 
-  // Decide whether onboarding is complete
+  // Check if this user has finished the one-time setup flow
   const onboarding = getOnboarding(user!.id);
   const hasOnboarded = onboarding?.completed === true;
 
   return (
     <>
-      {/* Trading signal pop-ups shown on any page */}
+      {/* Alert pop-ups float above everything else on every page */}
       <TradingAlerts signals={newSignals} />
 
       <Switch>
+        {/* Root path lands on dashboard if done with onboarding, otherwise setup first */}
         <Route path="/" component={hasOnboarded ? Dashboard : Onboarding} />
         <Route path="/onboarding" component={Onboarding} />
         <Route path="/dashboard" component={Dashboard} />
@@ -52,8 +57,10 @@ function Router() {
 
 function App() {
   return (
+    // QueryClientProvider handles all the data fetching and caching
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
+        {/* UserProvider makes the signed-in user available anywhere in the tree */}
         <UserProvider>
           <Toaster />
           <Router />

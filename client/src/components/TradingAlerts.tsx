@@ -1,10 +1,6 @@
-/**
- * TradingAlerts.tsx
- *
- * Displays real-time AI trading signals as slide-in notifications in the
- * top-right corner. Green for BUY, red for SELL. Each alert auto-dismisses
- * after 12 seconds. Clicking the ticker opens Pattern Analyzer for that stock.
- */
+// Pop-up trading signal cards that appear in the top-right corner.
+// Green = BUY, red = SELL. Each one auto-dismisses after 12 seconds.
+// Clicking the action button sends the user straight to Pattern Analyzer for that stock.
 
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
@@ -20,22 +16,23 @@ export interface TradingSignal {
   newsHeadline?: string;
 }
 
+// Internal type that adds display state on top of the raw signal data
 interface ActiveAlert extends TradingSignal {
-  addedAt: number;
-  visible: boolean;
+  addedAt: number;  // timestamp so we can calculate how long it's been showing
+  visible: boolean; // flipped to false just before we remove it (enables the slide-out animation)
 }
 
 interface TradingAlertsProps {
   signals: TradingSignal[];
 }
 
-const AUTO_DISMISS_MS = 12000;
+const AUTO_DISMISS_MS = 12000; // 12 seconds feels long enough to actually read
 
 export default function TradingAlerts({ signals }: TradingAlertsProps) {
   const [, navigate] = useLocation();
   const [alerts, setAlerts] = useState<ActiveAlert[]>([]);
 
-  // When new signals arrive, add them to the alert stack
+  // When the polling hook delivers fresh signals, add them to our local stack
   useEffect(() => {
     if (signals.length === 0) return;
 
@@ -46,14 +43,14 @@ export default function TradingAlerts({ signals }: TradingAlertsProps) {
     }));
 
     setAlerts(prev => {
-      // Deduplicate by id
+      // Safety dedup — the hook already filters by seen IDs but this covers edge cases
       const existingIds = new Set(prev.map(a => a.id));
       const fresh = incoming.filter(a => !existingIds.has(a.id));
       return [...prev, ...fresh];
     });
   }, [signals]);
 
-  // Auto-dismiss after 12 seconds
+  // Every 500ms, hide alerts that have been up for 12+ seconds and then clean them out
   useEffect(() => {
     if (alerts.length === 0) return;
     const interval = setInterval(() => {
@@ -63,6 +60,7 @@ export default function TradingAlerts({ signals }: TradingAlertsProps) {
           .map(a =>
             now - a.addedAt >= AUTO_DISMISS_MS ? { ...a, visible: false } : a
           )
+          // Give the CSS transition a moment to finish before actually removing the element
           .filter(a => a.visible || now - a.addedAt < AUTO_DISMISS_MS + 500)
       );
     }, 500);
@@ -73,6 +71,7 @@ export default function TradingAlerts({ signals }: TradingAlertsProps) {
     setAlerts(prev => prev.filter(a => a.id !== id));
   }
 
+  // Dismiss the alert first, then navigate — avoids a flash of the alert on the new page
   function openPatternAnalyzer(ticker: string, id: string) {
     dismiss(id);
     navigate(`/patterns?ticker=${ticker}`);
@@ -81,6 +80,7 @@ export default function TradingAlerts({ signals }: TradingAlertsProps) {
   if (alerts.length === 0) return null;
 
   return (
+    // pointer-events-none on the container so it doesn't block clicks on the page behind it
     <div className="fixed top-4 right-4 z-50 flex flex-col gap-3 max-w-sm w-full pointer-events-none">
       {alerts.map(alert => {
         const isBuy = alert.action === "BUY";
@@ -95,7 +95,7 @@ export default function TradingAlerts({ signals }: TradingAlertsProps) {
                 : "bg-red-950 border-red-600"
             }`}
           >
-            {/* Top strip with action label */}
+            {/* Coloured header bar with action label */}
             <div
               className={`flex items-center justify-between px-4 py-2 ${
                 isBuy ? "bg-emerald-600" : "bg-red-600"
@@ -106,6 +106,7 @@ export default function TradingAlerts({ signals }: TradingAlertsProps) {
                 <span className="text-white font-bold text-sm tracking-wide">
                   {isBuy ? "BUY SIGNAL" : "SELL SIGNAL"}
                 </span>
+                {/* "Urgent" badge for high-confidence signals */}
                 {alert.urgency === "high" && (
                   <span className="bg-white/20 text-white text-xs px-2 py-0.5 rounded-full">
                     Urgent
@@ -120,7 +121,7 @@ export default function TradingAlerts({ signals }: TradingAlertsProps) {
               </button>
             </div>
 
-            {/* Body */}
+            {/* Main body: icon, ticker, reason, confidence */}
             <div className="px-4 py-3">
               <div className="flex items-start gap-3">
                 <div
@@ -151,6 +152,7 @@ export default function TradingAlerts({ signals }: TradingAlertsProps) {
                 </div>
               </div>
 
+              {/* Show the headline that triggered the signal so the user can judge it */}
               {alert.newsHeadline && (
                 <p className="mt-2 text-white/50 text-xs italic border-t border-white/10 pt-2 line-clamp-2">
                   "{alert.newsHeadline}"
@@ -169,7 +171,7 @@ export default function TradingAlerts({ signals }: TradingAlertsProps) {
               </button>
             </div>
 
-            {/* Auto-dismiss progress bar */}
+            {/* Thin progress bar that drains as the auto-dismiss timer ticks down */}
             <div className={`h-1 ${isBuy ? "bg-emerald-900" : "bg-red-900"}`}>
               <div
                 className={`h-full transition-all ease-linear ${

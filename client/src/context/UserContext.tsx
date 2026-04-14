@@ -1,3 +1,6 @@
+// Global user state that any component can read with useUser().
+// Keeps track of who's signed in and persists the session across page reloads.
+
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import {
   UserProfile,
@@ -5,7 +8,6 @@ import {
   setCurrentUserId,
   clearCurrentSession,
   updateUserLastLogin,
-  getCurrentUserId,
 } from "@/lib/localStore";
 
 interface UserContextType {
@@ -15,6 +17,7 @@ interface UserContextType {
   isSignedIn: boolean;
 }
 
+// Default values are just placeholders — the real ones come from UserProvider below
 const UserContext = createContext<UserContextType>({
   user: null,
   signIn: () => {},
@@ -25,7 +28,8 @@ const UserContext = createContext<UserContextType>({
 export function UserProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
 
-  // Restore session on mount
+  // When the app first loads, check if there's already a session saved.
+  // This is what keeps you signed in after a page refresh.
   useEffect(() => {
     const existing = getCurrentUser();
     if (existing) {
@@ -34,14 +38,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, []);
 
   function signIn(profile: UserProfile) {
-    setCurrentUserId(profile.id);
-    updateUserLastLogin(profile.id);
+    setCurrentUserId(profile.id);   // save to localStorage so reload restores it
+    updateUserLastLogin(profile.id); // update the "last login" timestamp on the profile card
     setUser(profile);
   }
 
   function signOut() {
-    clearCurrentSession();
-    setUser(null);
+    clearCurrentSession(); // removes the stored user ID
+    setUser(null);         // clears React state, which triggers a redirect to sign-in
   }
 
   return (
@@ -51,11 +55,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// Shorthand hook — import this instead of importing UserContext directly
 export function useUser() {
   return useContext(UserContext);
 }
 
-// Returns true if the current session is valid
+// Redirect helper: call this in any page that requires a signed-in user
 export function useRequireAuth(redirectCallback: () => void) {
   const { isSignedIn } = useUser();
   useEffect(() => {

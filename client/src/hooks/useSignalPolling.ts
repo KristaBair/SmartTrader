@@ -1,11 +1,6 @@
-/**
- * useSignalPolling.ts
- *
- * Polls /api/trading-signals every POLL_INTERVAL_MS.
- * Tracks which signal IDs have already been shown (stored in localStorage
- * so they don't re-trigger on page reload).
- * Returns only NEW signals on each poll so the alerts overlay can show them.
- */
+// Runs in the background while the user is signed in.
+// Every 3 minutes it asks the server to scan the latest news for BUY/SELL signals.
+// Signals the user has already seen are tracked in localStorage so they never pop up twice.
 
 import { useState, useEffect, useRef } from "react";
 import { apiRequest } from "@/lib/queryClient";
@@ -20,9 +15,9 @@ export interface TradingSignal {
   newsHeadline?: string;
 }
 
-const POLL_INTERVAL_MS = 3 * 60 * 1000; // every 3 minutes
-const SEEN_KEY = "smarttrader_seen_signals";
-const MAX_SEEN = 200; // cap stored IDs to avoid localStorage bloat
+const POLL_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes — keeps us within free News API limits
+const SEEN_KEY = "smarttrader_seen_signals"; // localStorage key for deduplication
+const MAX_SEEN = 200; // cap so we don't fill up localStorage with thousands of old IDs
 
 function getSeenIds(): Set<string> {
   try {
@@ -33,11 +28,11 @@ function getSeenIds(): Set<string> {
   }
 }
 
+// Add newly seen IDs and trim the list if it gets too long
 function markSeen(ids: string[]) {
   try {
     const seen = getSeenIds();
     ids.forEach(id => seen.add(id));
-    // Trim to last MAX_SEEN
     const trimmed = Array.from(seen).slice(-MAX_SEEN);
     localStorage.setItem(SEEN_KEY, JSON.stringify(trimmed));
   } catch {}
@@ -45,25 +40,31 @@ function markSeen(ids: string[]) {
 
 export function useSignalPolling(enabled: boolean) {
   const [newSignals, setNewSignals] = useState<TradingSignal[]>([]);
+
+  // Ref instead of state so we don't trigger re-renders just to track "is fetching"
   const isFetchingRef = useRef(false);
 
   async function fetchSignals() {
+    // Skip if a fetch is already in flight — prevents overlap on slow connections
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
+
     try {
       const res = await apiRequest("GET", "/api/trading-signals");
       const data = await res.json();
       const signals: TradingSignal[] = data.signals || [];
       if (signals.length === 0) return;
 
+      // Filter out anything we've already shown to avoid repeat alerts
       const seen = getSeenIds();
       const fresh = signals.filter(s => !seen.has(s.id));
+
       if (fresh.length > 0) {
         markSeen(fresh.map(s => s.id));
-        setNewSignals(fresh);
+        setNewSignals(fresh); // this triggers TradingAlerts to pop them up
       }
-    } catch (err) {
-      // Silently fail — don't interrupt the user with error toasts for background polling
+    } catch {
+      // Silently swallow errors — background polling shouldn't interrupt the user
     } finally {
       isFetchingRef.current = false;
     }
@@ -72,13 +73,13 @@ export function useSignalPolling(enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
 
-    // Fetch immediately on mount, then on interval
+    // Hit it once right away so users don't wait 3 minutes for the first signal
     fetchSignals();
     const timer = setInterval(fetchSignals, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
+    return () => clearInterval(timer); // clean up when user signs out
   }, [enabled]);
 
-  // Clear signals after they've been consumed by the UI
+  // The UI calls this after consuming the signals so we don't re-show them
   function clearSignals() {
     setNewSignals([]);
   }

@@ -13,9 +13,9 @@ import {
   getOnboarding,
   UserProfile,
 } from "@/lib/localStore";
-import { TrendingUp, UserPlus, KeyRound, ArrowLeft, User } from "lucide-react";
+import { TrendingUp, UserPlus, KeyRound, ArrowLeft } from "lucide-react";
 
-type View = "home" | "select-user" | "enter-passcode" | "create-account";
+type View = "home" | "enter-passcode" | "create-account";
 
 export default function SignIn() {
   const [, navigate] = useLocation();
@@ -25,19 +25,15 @@ export default function SignIn() {
   const [view, setView] = useState<View>("home");
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
-  // Passcode entry state
   const [passcode, setPasscode] = useState("");
   const [passcodeError, setPasscodeError] = useState(false);
 
-  // New account state
   const [newFirst, setNewFirst] = useState("");
   const [newLast, setNewLast] = useState("");
   const [newPasscode, setNewPasscode] = useState("");
   const [confirmPasscode, setConfirmPasscode] = useState("");
 
   const users = getAllUsers();
-
-  // ---- Sign in with existing profile ----
 
   function handleSelectUser(user: UserProfile) {
     setSelectedUser(user);
@@ -52,7 +48,6 @@ export default function SignIn() {
       setPasscode(next);
       setPasscodeError(false);
       if (next.length === 4) {
-        // Auto-submit when 4 digits are entered
         setTimeout(() => verifyPasscode(next), 120);
       }
     }
@@ -80,8 +75,6 @@ export default function SignIn() {
     }
   }
 
-  // ---- Create new account ----
-
   function handleCreateAccount() {
     if (!newFirst.trim() || !newLast.trim()) {
       toast({ title: "Name required", description: "Please enter your first and last name.", variant: "destructive" });
@@ -96,7 +89,6 @@ export default function SignIn() {
       return;
     }
 
-    // Check for duplicate name
     const existing = getAllUsers().find(
       u =>
         u.firstName.toLowerCase() === newFirst.trim().toLowerCase() &&
@@ -112,11 +104,7 @@ export default function SignIn() {
     navigate("/onboarding");
   }
 
-  // ---- Passcode numpad ----
-
   const numpadKeys = ["1","2","3","4","5","6","7","8","9","","0","del"];
-
-  // ---- Render ----
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex flex-col items-center justify-center p-6">
@@ -131,26 +119,38 @@ export default function SignIn() {
         </div>
       </div>
 
-      {/* --- HOME VIEW --- */}
+      {/* --- HOME VIEW: show profiles directly --- */}
       {view === "home" && (
-        <div className="w-full max-w-sm space-y-4">
+        <div className="w-full max-w-sm">
           {users.length > 0 ? (
             <>
-              <p className="text-center text-slate-300 text-sm mb-6">Who's investing today?</p>
-              <Button
-                onClick={() => setView("select-user")}
-                className="w-full h-14 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-2xl text-base shadow-lg"
-              >
-                <User className="h-5 w-5 mr-2" />
-                Sign In
-              </Button>
+              <p className="text-center text-slate-300 text-sm mb-5">Who's investing today?</p>
+              <div className="space-y-3 mb-5">
+                {users.map(u => (
+                  <button
+                    key={u.id}
+                    onClick={() => handleSelectUser(u)}
+                    className="w-full flex items-center gap-4 p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-blue-500 rounded-2xl transition-all text-left"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
+                      {u.firstName[0]}{u.lastName[0]}
+                    </div>
+                    <div>
+                      <p className="text-white font-semibold">{u.firstName} {u.lastName}</p>
+                      <p className="text-slate-400 text-xs">
+                        Last login: {new Date(u.lastLogin).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
               <Button
                 onClick={() => setView("create-account")}
                 variant="outline"
-                className="w-full h-14 border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white rounded-2xl text-base"
+                className="w-full h-12 border-slate-600 text-slate-300 hover:bg-slate-800 hover:text-white rounded-2xl"
               >
-                <UserPlus className="h-5 w-5 mr-2" />
-                Create New Profile
+                <UserPlus className="h-4 w-4 mr-2" />
+                Add New Profile
               </Button>
             </>
           ) : (
@@ -170,48 +170,11 @@ export default function SignIn() {
         </div>
       )}
 
-      {/* --- SELECT USER VIEW --- */}
-      {view === "select-user" && (
-        <div className="w-full max-w-sm space-y-3">
-          <button
-            onClick={() => setView("home")}
-            className="flex items-center gap-1 text-slate-400 hover:text-white text-sm mb-4"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back
-          </button>
-          <p className="text-center text-slate-300 text-sm mb-4">Choose your profile</p>
-          {users.map(u => (
-            <button
-              key={u.id}
-              onClick={() => handleSelectUser(u)}
-              className="w-full flex items-center gap-4 p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-blue-500 rounded-2xl transition-all text-left"
-            >
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
-                {u.firstName[0]}{u.lastName[0]}
-              </div>
-              <div>
-                <p className="text-white font-semibold">{u.firstName} {u.lastName}</p>
-                <p className="text-slate-400 text-xs">
-                  Last login: {new Date(u.lastLogin).toLocaleDateString()}
-                </p>
-              </div>
-            </button>
-          ))}
-          <Button
-            onClick={() => setView("create-account")}
-            variant="outline"
-            className="w-full mt-2 border-slate-600 text-slate-400 hover:bg-slate-800 hover:text-white rounded-2xl"
-          >
-            <UserPlus className="h-4 w-4 mr-2" /> Add New Profile
-          </Button>
-        </div>
-      )}
-
       {/* --- ENTER PASSCODE VIEW --- */}
       {view === "enter-passcode" && selectedUser && (
         <div className="w-full max-w-xs flex flex-col items-center">
           <button
-            onClick={() => setView("select-user")}
+            onClick={() => setView("home")}
             className="self-start flex items-center gap-1 text-slate-400 hover:text-white text-sm mb-6"
           >
             <ArrowLeft className="h-4 w-4" /> Back
@@ -227,7 +190,6 @@ export default function SignIn() {
             <KeyRound className="h-3 w-3" /> Enter your 4-digit passcode
           </p>
 
-          {/* Dot indicators */}
           <div className="flex gap-4 mb-4">
             {[0,1,2,3].map(i => (
               <div
@@ -246,7 +208,6 @@ export default function SignIn() {
             <p className="text-red-400 text-sm mb-4">Incorrect passcode. Try again.</p>
           )}
 
-          {/* Numpad */}
           <div className="grid grid-cols-3 gap-3 w-full max-w-[240px] mt-2">
             {numpadKeys.map((key, idx) => {
               if (key === "") return <div key={idx} />;
@@ -280,7 +241,7 @@ export default function SignIn() {
         <Card className="w-full max-w-sm bg-slate-800 border-slate-700 shadow-2xl">
           <CardHeader className="pb-4">
             <button
-              onClick={() => setView(users.length > 0 ? "home" : "home")}
+              onClick={() => setView("home")}
               className="flex items-center gap-1 text-slate-400 hover:text-white text-sm mb-2"
             >
               <ArrowLeft className="h-4 w-4" /> Back

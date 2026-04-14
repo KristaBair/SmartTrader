@@ -8,7 +8,7 @@ import { storage } from "./storage";
 import { analyzePortfolio, getRiskAssessment, suggestInvestment, analyzeStockPatterns, type StockEvent } from "./services/openai";
 import { runQuantAnalysis } from "./services/quantAnalytics";
 import { analyzeNewsEvent, generateAlertMessage, shouldGenerateAlert, getMockNewsEvents } from "./services/marketIntelligence";
-import { getStockQuote, getMultipleQuotes, searchSymbol, getHistoricalPrices } from "./services/alphaVantage";
+import { getStockQuote, getMultipleQuotes, searchSymbol, getHistoricalPrices } from "./services/finnhub";
 import { getFinancialNews, getStockNews, getTopHeadlines, getNewsByDateRange } from "./services/newsApi";
 import { portfolioFormSchema } from "@shared/schema";
 import { z } from "zod";

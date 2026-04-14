@@ -13,7 +13,7 @@
  * Assumptions are documented in comments so the model is transparent.
  */
 
-import { getHistoricalPrices } from "./alphaVantage";
+import { getHistoricalPrices } from "./finnhub";
 
 // -- Statistical helpers --
 

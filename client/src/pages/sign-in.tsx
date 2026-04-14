@@ -1,3 +1,6 @@
+// The sign-in screen. Shows existing profiles as tappable cards right away —
+// no extra "Sign In" button to click through. If no profiles exist, prompts to create one.
+
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +18,7 @@ import {
 } from "@/lib/localStore";
 import { TrendingUp, UserPlus, KeyRound, ArrowLeft } from "lucide-react";
 
+// Three screens: the profile list, the passcode numpad, and the create-account form
 type View = "home" | "enter-passcode" | "create-account";
 
 export default function SignIn() {
@@ -25,19 +29,24 @@ export default function SignIn() {
   const [view, setView] = useState<View>("home");
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
+  // Passcode entry state
   const [passcode, setPasscode] = useState("");
   const [passcodeError, setPasscodeError] = useState(false);
 
+  // New account form state
   const [newFirst, setNewFirst] = useState("");
   const [newLast, setNewLast] = useState("");
   const [newPasscode, setNewPasscode] = useState("");
   const [confirmPasscode, setConfirmPasscode] = useState("");
 
+  // Read all profiles off the device every render (fast, always fresh)
   const users = getAllUsers();
+
+  // ── Sign in with existing profile ────────────────────────────────────────
 
   function handleSelectUser(user: UserProfile) {
     setSelectedUser(user);
-    setPasscode("");
+    setPasscode("");         // clear any leftover digits from a previous attempt
     setPasscodeError(false);
     setView("enter-passcode");
   }
@@ -47,8 +56,9 @@ export default function SignIn() {
       const next = passcode + digit;
       setPasscode(next);
       setPasscodeError(false);
+      // Auto-submit as soon as 4 digits are in — no confirm button needed
       if (next.length === 4) {
-        setTimeout(() => verifyPasscode(next), 120);
+        setTimeout(() => verifyPasscode(next), 120); // tiny delay so the last dot animates
       }
     }
   }
@@ -63,6 +73,7 @@ export default function SignIn() {
     const match = findUser(selectedUser.firstName, selectedUser.lastName, code);
     if (match) {
       signIn(match);
+      // Skip onboarding if they've already done it
       const onboarding = getOnboarding(match.id);
       if (onboarding?.completed) {
         navigate("/dashboard");
@@ -71,9 +82,11 @@ export default function SignIn() {
       }
     } else {
       setPasscodeError(true);
-      setPasscode("");
+      setPasscode(""); // clear so they can try again
     }
   }
+
+  // ── Create new profile ───────────────────────────────────────────────────
 
   function handleCreateAccount() {
     if (!newFirst.trim() || !newLast.trim()) {
@@ -89,6 +102,7 @@ export default function SignIn() {
       return;
     }
 
+    // Prevent two people sharing a name on the same device
     const existing = getAllUsers().find(
       u =>
         u.firstName.toLowerCase() === newFirst.trim().toLowerCase() &&
@@ -101,14 +115,18 @@ export default function SignIn() {
 
     const user = createUser(newFirst, newLast, newPasscode);
     signIn(user);
-    navigate("/onboarding");
+    navigate("/onboarding"); // new users always go through setup first
   }
 
+  // Layout for the number pad: 1-9, blank space, 0, delete
   const numpadKeys = ["1","2","3","4","5","6","7","8","9","","0","del"];
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex flex-col items-center justify-center p-6">
-      {/* Logo */}
+
+      {/* Logo — same on every view for continuity */}
       <div className="flex items-center gap-3 mb-10">
         <div className="w-12 h-12 bg-blue-500 rounded-2xl flex items-center justify-center shadow-lg">
           <TrendingUp className="text-white h-7 w-7" />
@@ -119,12 +137,14 @@ export default function SignIn() {
         </div>
       </div>
 
-      {/* --- HOME VIEW: show profiles directly --- */}
+      {/* ── HOME: profile picker ─────────────────────────────────────────── */}
       {view === "home" && (
         <div className="w-full max-w-sm">
           {users.length > 0 ? (
             <>
               <p className="text-center text-slate-300 text-sm mb-5">Who's investing today?</p>
+
+              {/* Each card is a profile — tap to go straight to the passcode screen */}
               <div className="space-y-3 mb-5">
                 {users.map(u => (
                   <button
@@ -132,6 +152,7 @@ export default function SignIn() {
                     onClick={() => handleSelectUser(u)}
                     className="w-full flex items-center gap-4 p-4 bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-blue-500 rounded-2xl transition-all text-left"
                   >
+                    {/* Initials avatar */}
                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg flex-shrink-0">
                       {u.firstName[0]}{u.lastName[0]}
                     </div>
@@ -144,6 +165,7 @@ export default function SignIn() {
                   </button>
                 ))}
               </div>
+
               <Button
                 onClick={() => setView("create-account")}
                 variant="outline"
@@ -154,6 +176,7 @@ export default function SignIn() {
               </Button>
             </>
           ) : (
+            // Fresh device — no profiles yet
             <>
               <p className="text-center text-slate-300 text-sm mb-6">
                 No profiles yet. Create yours to get started.
@@ -170,7 +193,7 @@ export default function SignIn() {
         </div>
       )}
 
-      {/* --- ENTER PASSCODE VIEW --- */}
+      {/* ── PASSCODE: numpad entry ───────────────────────────────────────── */}
       {view === "enter-passcode" && selectedUser && (
         <div className="w-full max-w-xs flex flex-col items-center">
           <button
@@ -180,6 +203,7 @@ export default function SignIn() {
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
 
+          {/* Show whose passcode we're asking for */}
           <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-2xl mb-3">
             {selectedUser.firstName[0]}{selectedUser.lastName[0]}
           </div>
@@ -190,6 +214,7 @@ export default function SignIn() {
             <KeyRound className="h-3 w-3" /> Enter your 4-digit passcode
           </p>
 
+          {/* Four dots that fill in as digits are typed */}
           <div className="flex gap-4 mb-4">
             {[0,1,2,3].map(i => (
               <div
@@ -197,7 +222,7 @@ export default function SignIn() {
                 className={`w-4 h-4 rounded-full border-2 transition-all ${
                   passcode.length > i
                     ? passcodeError
-                      ? "bg-red-500 border-red-500"
+                      ? "bg-red-500 border-red-500"   // flash red on wrong passcode
                       : "bg-blue-400 border-blue-400"
                     : "border-slate-500"
                 }`}
@@ -208,9 +233,10 @@ export default function SignIn() {
             <p className="text-red-400 text-sm mb-4">Incorrect passcode. Try again.</p>
           )}
 
+          {/* Number pad */}
           <div className="grid grid-cols-3 gap-3 w-full max-w-[240px] mt-2">
             {numpadKeys.map((key, idx) => {
-              if (key === "") return <div key={idx} />;
+              if (key === "") return <div key={idx} />; // empty cell under 7,8,9
               if (key === "del") {
                 return (
                   <button
@@ -236,7 +262,7 @@ export default function SignIn() {
         </div>
       )}
 
-      {/* --- CREATE ACCOUNT VIEW --- */}
+      {/* ── CREATE ACCOUNT: name + passcode form ────────────────────────── */}
       {view === "create-account" && (
         <Card className="w-full max-w-sm bg-slate-800 border-slate-700 shadow-2xl">
           <CardHeader className="pb-4">
@@ -297,6 +323,7 @@ export default function SignIn() {
               />
             </div>
 
+            {/* Button stays disabled until both passcode fields are full */}
             <Button
               onClick={handleCreateAccount}
               className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl mt-2"

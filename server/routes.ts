@@ -1,3 +1,7 @@
+// All API routes live here. Most are public (no auth needed) because user data
+// is managed in localStorage on the client. The only routes that still use
+// isAuthenticated are the legacy DB-backed portfolio endpoints.
+
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -404,7 +408,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Real-time trading signals: fetch live headlines, GPT scans them for actionable BUY/SELL signals
+  // Trading signals — polled every 3 min by the frontend.
+  // Grabs the latest 10 financial headlines and asks GPT to spot BUY/SELL opportunities.
+  // Only high-confidence signals (>70%) make it through so alerts feel meaningful, not spammy.
   app.get("/api/trading-signals", async (req, res) => {
     try {
       const articles = await getTopHeadlines();
@@ -454,6 +460,8 @@ Respond in JSON only:
 
       const raw = response.choices[0].message.content || '{"signals":[]}';
       const parsed = JSON.parse(raw);
+
+      // Stamp a unique ID on each signal so the frontend can tell if it's already shown it
       const signals = (parsed.signals || []).map((s: any, i: number) => ({
         ...s,
         id: `${s.ticker}_${Date.now()}_${i}`,
@@ -462,6 +470,7 @@ Respond in JSON only:
       res.json({ signals, generatedAt: new Date().toISOString() });
     } catch (error) {
       console.error("Trading signals error:", error);
+      // Return an empty list instead of an error — background polling should never interrupt the user
       res.json({ signals: [], generatedAt: new Date().toISOString() });
     }
   });

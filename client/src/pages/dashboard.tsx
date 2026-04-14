@@ -22,17 +22,21 @@ export default function Dashboard() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  // Pre-load portfolio from localStorage so the form isn't blank on return visits
   const [portfolio, setPortfolio] = useState(getPortfolio(user?.id));
   const { toast } = useToast();
 
   const onboarding = getOnboarding(user?.id);
 
-  // Load saved recommendations for the current user
+  // Restore cached recommendations so the user sees their last analysis right away
+  // while they wait for a fresh one (or if they haven't run one yet today)
   useEffect(() => {
     const saved = getRecommendations(user?.id);
     if (saved.length > 0) setRecommendations(saved);
   }, [user?.id]);
 
+  // Called when the user submits the portfolio form.
+  // Saves locally first (instant), then fires off the AI analysis.
   const handlePortfolioSubmit = async (portfolioData: any) => {
     try {
       setIsAnalyzing(true);
@@ -84,14 +88,16 @@ export default function Dashboard() {
     }
   };
 
+  // Wipes this user's portfolio and recommendations, then sends them back through setup
   const handleReset = () => {
     clearAll(user?.id);
     navigate("/onboarding");
   };
 
+  // Signs out and returns to the profile picker (the Router will render SignIn
+  // automatically once user becomes null)
   const handleSignOut = () => {
     signOut();
-    // navigate to "/" which will render SignIn since user is null
     navigate("/");
   };
 

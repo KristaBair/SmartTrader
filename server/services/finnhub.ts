@@ -1,12 +1,12 @@
 // Finnhub stock data service.
-// Replaces Alpha Vantage — same exported functions, same return shapes,
-// so nothing else in the codebase needs to change except the import line.
-// Finnhub free tier allows 60 calls/min (much better than Alpha Vantage's 5/min).
+// Replaces Alpha Vantage with the same exported functions and return shapes,
+// so nothing else in the codebase needed to change except the import line.
+// Finnhub free tier allows 60 calls per minute, much better than Alpha Vantage's 5.
 
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const BASE_URL = "https://finnhub.io/api/v1";
 
-// Shared fetch helper — adds the token to every request
+// Shared fetch helper that adds the API token to every request.
 async function fhFetch(path: string): Promise<any> {
   const url = `${BASE_URL}${path}&token=${FINNHUB_API_KEY}`;
   const res = await fetch(url);
@@ -49,7 +49,7 @@ export interface StockSearchResult {
 // ── Quote ─────────────────────────────────────────────────────────────────
 // Finnhub /quote returns: c (current), d (change), dp (% change),
 // h (high), l (low), o (open), pc (prev close). Volume isn't in /quote
-// so we default to 0 — it's only used for display purposes.
+// so we default to 0 (it is only used for display purposes).
 
 export async function getStockQuote(symbol: string): Promise<StockQuote | null> {
   try {

@@ -17,7 +17,7 @@ interface UserContextType {
   isSignedIn: boolean;
 }
 
-// Default values are just placeholders — the real ones come from UserProvider below
+// Default values are just placeholders. The real ones come from UserProvider below.
 const UserContext = createContext<UserContextType>({
   user: null,
   signIn: () => {},
@@ -55,7 +55,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// Shorthand hook — import this instead of importing UserContext directly
+// Shorthand hook. Import this instead of importing UserContext directly.
 export function useUser() {
   return useContext(UserContext);
 }

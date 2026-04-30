@@ -1,4 +1,4 @@
-// The sign-in screen. Shows existing profiles as tappable cards right away —
+// The sign-in screen. Shows existing profiles as tappable cards right away.
 // no extra "Sign In" button to click through. If no profiles exist, prompts to create one.
 
 import { useState } from "react";
@@ -56,7 +56,7 @@ export default function SignIn() {
       const next = passcode + digit;
       setPasscode(next);
       setPasscodeError(false);
-      // Auto-submit as soon as 4 digits are in — no confirm button needed
+      // Auto-submit as soon as 4 digits are in. No confirm button needed.
       if (next.length === 4) {
         setTimeout(() => verifyPasscode(next), 120); // tiny delay so the last dot animates
       }
@@ -176,7 +176,7 @@ export default function SignIn() {
               </Button>
             </>
           ) : (
-            // Fresh device — no profiles yet
+            // Fresh device with no profiles yet.
             <>
               <p className="text-center text-slate-300 text-sm mb-6">
                 No profiles yet. Create yours to get started.

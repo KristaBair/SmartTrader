@@ -43,7 +43,7 @@ export default function TradingAlerts({ signals }: TradingAlertsProps) {
     }));
 
     setAlerts(prev => {
-      // Safety dedup — the hook already filters by seen IDs but this covers edge cases
+      // Safety dedup: the hook already filters by seen IDs but this covers edge cases.
       const existingIds = new Set(prev.map(a => a.id));
       const fresh = incoming.filter(a => !existingIds.has(a.id));
       return [...prev, ...fresh];
@@ -71,7 +71,7 @@ export default function TradingAlerts({ signals }: TradingAlertsProps) {
     setAlerts(prev => prev.filter(a => a.id !== id));
   }
 
-  // Dismiss the alert first, then navigate — avoids a flash of the alert on the new page
+  // Dismiss the alert first, then navigate. This avoids a flash of the alert on the new page.
   function openPatternAnalyzer(ticker: string, id: string) {
     dismiss(id);
     navigate(`/patterns?ticker=${ticker}`);

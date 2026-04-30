@@ -48,7 +48,7 @@ export default function PortfolioInput({
 }: PortfolioInputProps) {
   const { toast } = useToast();
 
-  // Local working copy — changes here flow out via onPortfolioChange
+  // Local working copy. Changes here flow out via onPortfolioChange.
   const [cash, setCash] = useState<string>(String(portfolio?.cash ?? ""));
   const [holdings, setHoldings] = useState<Holding[]>(portfolio?.investments ?? []);
   const [riskTolerance, setRiskTolerance] = useState(portfolio?.riskTolerance ?? "moderate");

@@ -22,7 +22,7 @@ import NotFound from "@/pages/not-found";
 function Router() {
   const { user, isSignedIn } = useUser();
 
-  // Only poll for signals when someone is actually signed in — no point hitting
+  // Only poll for signals when someone is actually signed in. No point hitting
   // the API on the sign-in screen
   const { newSignals } = useSignalPolling(isSignedIn);
 

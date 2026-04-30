@@ -1,7 +1,7 @@
 // Market Intelligence page.
 // Shows live financial news and AI-generated trading signals in one place.
 // Signals auto-refresh every 3 minutes to match the pop-up polling cadence.
-// News loads immediately on mount — no button clicks required to see content.
+// News loads immediately on mount. No button clicks required to see content.
 
 import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
@@ -100,7 +100,7 @@ export default function MarketIntelligence() {
       setSignals(data.signals || []);
       setSignalsAge(data.generatedAt || new Date().toISOString());
     } catch {
-      // Silently fail — background polling should never interrupt the user
+      // Silently fail. Background polling should never interrupt the user.
     } finally {
       setSignalsLoading(false);
       setSignalsRefreshing(false);
@@ -137,7 +137,7 @@ export default function MarketIntelligence() {
       const res = await apiRequest("GET", "/api/news/analyze");
       const data = await res.json();
       // The endpoint returns multiple events. Use the first one that matches
-      // or just the first result — good enough for per-article analysis.
+      // or just the first result. Good enough for per-article analysis.
       const event = (data.events || [])[0];
       if (event) {
         setAnalyses(prev => ({ ...prev, [index]: event.aiAnalysis || event }));

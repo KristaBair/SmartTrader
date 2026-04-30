@@ -36,13 +36,13 @@ export default function Dashboard() {
   }, [user?.id]);
 
   // Called by the portfolio editor whenever the user changes anything.
-  // The component already saved to localStorage — we just keep React state in sync.
+  // The component already saved to localStorage. We just keep React state in sync.
   const handlePortfolioChange = (updated: LocalPortfolio) => {
     setPortfolio(updated);
   };
 
   // Called when the user clicks "Analyze with AI".
-  // The portfolio has already been saved — we just run the analysis on it.
+  // The portfolio has already been saved. We just run the analysis on it.
   const handleAnalyze = async (current: LocalPortfolio) => {
     try {
       setIsAnalyzing(true);

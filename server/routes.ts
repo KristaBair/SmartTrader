@@ -1,58 +1,49 @@
-// All API routes live here. Most are public (no auth needed) because user data
-// is managed in localStorage on the client. The only routes that still use
-// isAuthenticated are the legacy DB-backed portfolio endpoints.
+// All API routes live here.
+// Most routes are public because user data lives in localStorage on the client.
+// The only route that still requires Replit Auth is /api/auth/user, which is kept
+// for the session system to function correctly.
 
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { analyzePortfolio, getRiskAssessment, suggestInvestment, analyzeStockPatterns, type StockEvent } from "./services/openai";
+import { analyzePortfolio, suggestInvestment, analyzeStockPatterns, type StockEvent } from "./services/openai";
 import { runQuantAnalysis } from "./services/quantAnalytics";
-import { analyzeNewsEvent, generateAlertMessage, shouldGenerateAlert, getMockNewsEvents } from "./services/marketIntelligence";
+import { analyzeNewsEvent } from "./services/marketIntelligence";
 import { getStockQuote, getMultipleQuotes, searchSymbol, getHistoricalPrices } from "./services/finnhub";
 import { getFinancialNews, getStockNews, getTopHeadlines, getNewsByDateRange } from "./services/newsApi";
-import { portfolioFormSchema } from "@shared/schema";
-import { z } from "zod";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import multer from "multer";
 import OpenAI from "openai";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Configure multer for image uploads
+  // Multer stores uploaded images in memory so we can pass them directly
+  // to OpenAI vision without writing temporary files to disk.
   const upload = multer({
     storage: multer.memoryStorage(),
-    limits: {
-      fileSize: 10 * 1024 * 1024, // 10MB limit
-    },
-    fileFilter: (req, file, cb) => {
-      if (file.mimetype.startsWith('image/')) {
-        cb(null, true);
-      } else {
-        cb(new Error('Only image files are allowed'));
-      }
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB cap
+    fileFilter: (_req, file, cb) => {
+      if (file.mimetype.startsWith("image/")) cb(null, true);
+      else cb(new Error("Only image files are allowed"));
     },
   });
 
-  // Initialize OpenAI client
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  // Auth middleware
+  // Replit Auth setup (required for the session table and /api/auth/user to work).
   await setupAuth(app);
 
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  // Returns the currently signed-in Replit user. Used by the auth session system.
+  app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      const user = await storage.getUser(req.user.claims.sub);
       res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
+    } catch {
       res.status(500).json({ message: "Failed to fetch user" });
     }
   });
 
-  // Public: analyze portfolio directly (no auth needed - localStorage-based frontend)
+  // AI portfolio analysis: the main "analyze with AI" button on the dashboard.
+  // Accepts the current holdings and returns ranked buy/sell recommendations.
   app.post("/api/portfolios/analyze-direct", async (req, res) => {
     try {
       const { cash, investments, riskTolerance, timeline } = req.body;
@@ -69,19 +60,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public: full quantitative portfolio analysis (Monte Carlo, VaR, scores, etc.)
-  // This is the main analytics endpoint - it fetches real historical data for each
-  // holding, runs all the statistical calculations, and returns a complete report.
+  // Quantitative portfolio analysis for the Analytics Lab page.
+  // Fetches real historical data for each holding and runs Monte Carlo,
+  // VaR, CVaR, Sharpe ratio, and Markowitz calculations on the server.
   app.post("/api/quant/analyze", async (req, res) => {
     try {
       const { holdings, cash, riskTolerance, timeHorizon } = req.body;
       if (!Array.isArray(holdings) || holdings.length === 0) {
         return res.status(400).json({ message: "At least one holding is required" });
       }
+      const validRisk = ["conservative", "moderate", "aggressive"].includes(riskTolerance)
+        ? riskTolerance
+        : "moderate";
       const report = await runQuantAnalysis(
         holdings,
         parseFloat(cash) || 0,
-        (["conservative", "moderate", "aggressive"].includes(riskTolerance) ? riskTolerance : "moderate"),
+        validRisk,
         parseInt(timeHorizon) || 5
       );
       res.json(report);
@@ -91,7 +85,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public: investment suggestion based on amount
+  // Smart Invest takes an amount and risk tolerance and returns a full allocation plan
+  // with specific tickers, dollar amounts, and reasoning for each position.
   app.post("/api/invest/suggest", async (req, res) => {
     try {
       const { amount, riskTolerance, goal } = req.body;
@@ -106,7 +101,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public: stock pattern analysis
+  // Pattern Analyzer fetches historical prices, finds the biggest single-day moves,
+  // pulls news from around those dates, and asks GPT to explain the patterns it sees.
   app.post("/api/patterns/analyze", async (req, res) => {
     try {
       const { ticker } = req.body;
@@ -114,13 +110,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const symbol = ticker.trim().toUpperCase();
 
-      // 1. Fetch historical price data (last 100 trading days)
+      // Pull the last 6 months of daily prices to look for significant moves.
       const prices = await getHistoricalPrices(symbol, "compact");
       if (prices.length < 10) {
-        return res.status(404).json({ message: `No price data found for ${symbol}. Check the ticker symbol.` });
+        return res.status(404).json({
+          message: `No price data found for ${symbol}. Check the ticker symbol.`,
+        });
       }
 
-      // 2. Find significant single-day moves (>4%)
+      // Flag any day where the price moved more than 4% in either direction.
       const events: StockEvent[] = [];
       for (let i = 1; i < prices.length; i++) {
         const prev = prices[i - 1].close;
@@ -138,42 +136,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
-      // Sort by magnitude, keep top 6
+      // Keep the 6 biggest moves. More than that makes the AI analysis too noisy.
       events.sort((a, b) => b.magnitude - a.magnitude);
       const topEvents = events.slice(0, 6).sort((a, b) => a.date.localeCompare(b.date));
 
-      // 3. Fetch news for each event (7 days before the event)
+      // Fetch news from the week leading up to each big move so we can correlate
+      // the price action with what was happening in the headlines at the time.
       for (const event of topEvents) {
         const eventDate = new Date(event.date);
-        const fromDate = new Date(eventDate);
-        fromDate.setDate(fromDate.getDate() - 7);
-        const from = fromDate.toISOString().split("T")[0];
-        const to = event.date;
-
-        const articles = await getNewsByDateRange(symbol, from, to);
+        const from = new Date(eventDate);
+        from.setDate(from.getDate() - 7);
+        const articles = await getNewsByDateRange(
+          symbol,
+          from.toISOString().split("T")[0],
+          event.date
+        );
         event.news = articles.map((a) => ({
           title: a.title,
           source: a.source,
           publishedAt: a.publishedAt,
         }));
-
-        // Avoid rate limiting
+        // Small pause to avoid hitting the News API rate limit on back-to-back calls.
         await new Promise((r) => setTimeout(r, 300));
       }
 
-      // 4. Get current quote for company name
       const quote = await getStockQuote(symbol);
-      const companyName = quote?.name || symbol;
-
-      // 5. AI pattern analysis
-      const analysis = await analyzeStockPatterns(symbol, companyName, topEvents);
-
-      // Include price data summary for chart
+      const analysis = await analyzeStockPatterns(symbol, quote?.name || symbol, topEvents);
       const priceHistory = prices.map((p) => ({ date: p.date, close: p.close, volume: p.volume }));
 
       res.json({
         ticker: symbol,
-        companyName,
+        companyName: quote?.name || symbol,
         currentPrice: quote?.price,
         priceChange: quote?.changePercent,
         priceHistory,
@@ -186,189 +179,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Portfolio routes
-  app.post("/api/portfolios", isAuthenticated, async (req: any, res) => {
+  // Market overview data shown on the dashboard (SPY, QQQ, VIX).
+  // Values come from the database, which is seeded on startup.
+  app.get("/api/market-data", async (_req, res) => {
     try {
-      const validatedData = portfolioFormSchema.parse(req.body);
-      
-      // Parse investments string into structured data
-      const investmentsText = validatedData.investments;
-      const investmentEntries = investmentsText.split(',').map(entry => {
-        const [symbol, amount] = entry.trim().split(':');
-        return {
-          symbol: symbol?.trim() || '',
-          name: symbol?.trim() || '',
-          amount: parseFloat(amount?.replace(/[$,\s]/g, '') || '0'),
-          currentValue: parseFloat(amount?.replace(/[$,\s]/g, '') || '0'),
-        };
-      }).filter(entry => entry.symbol && entry.amount > 0);
-
-      const userId = req.user.claims.sub;
-      const portfolioData = {
-        userId: userId,
-        cash: validatedData.cash,
-        investments: investmentEntries,
-        initialInvestment: validatedData.initialInvestment || "0",
-        monthlyContribution: validatedData.monthlyContribution || "0",
-        totalContributions: validatedData.initialInvestment || "0",
-        riskTolerance: validatedData.riskTolerance,
-        timeline: validatedData.timeline,
-      };
-
-      // Check if user already has a portfolio
-      const existingPortfolio = await storage.getPortfolioByUserId(userId);
-      
-      let portfolio;
-      if (existingPortfolio) {
-        portfolio = await storage.updatePortfolio(existingPortfolio.id, portfolioData);
-      } else {
-        portfolio = await storage.createPortfolio(portfolioData);
-      }
-
-      res.json(portfolio);
-    } catch (error) {
-      console.error("Portfolio creation error:", error);
-      if (error instanceof z.ZodError) {
-        res.status(400).json({ message: "Validation error", errors: error.errors });
-      } else {
-        res.status(500).json({ message: "Failed to create portfolio" });
-      }
-    }
-  });
-
-  app.get("/api/portfolios/user/:userId", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const portfolio = await storage.getPortfolioByUserId(userId);
-      
-      if (!portfolio) {
-        res.status(404).json({ message: "Portfolio not found" });
-        return;
-      }
-
-      res.json(portfolio);
-    } catch (error) {
-      console.error("Portfolio fetch error:", error);
-      res.status(500).json({ message: "Failed to fetch portfolio" });
-    }
-  });
-
-  // AI Analysis routes
-  app.post("/api/portfolios/:id/analyze", isAuthenticated, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const portfolio = await storage.getPortfolio(id);
-
-      if (!portfolio) {
-        res.status(404).json({ message: "Portfolio not found" });
-        return;
-      }
-
-      // Convert investments to string format for OpenAI
-      const investmentsText = portfolio.investments
-        .map(inv => `${inv.symbol}: $${inv.amount}`)
-        .join(', ');
-
-      const analysis = await analyzePortfolio(
-        parseFloat(portfolio.cash),
-        investmentsText,
-        portfolio.riskTolerance as any,
-        portfolio.timeline as any
-      );
-
-      // Clear existing recommendations
-      await storage.deleteRecommendationsByPortfolio(id);
-
-      // Save new recommendations
-      const recommendations = await Promise.all(
-        analysis.recommendations.map(rec =>
-          storage.createRecommendation({
-            portfolioId: id,
-            symbol: rec.symbol,
-            name: rec.name,
-            action: rec.action,
-            confidence: rec.confidence,
-            reasoning: rec.reasoning,
-            targetPrice: rec.targetPrice?.toString(),
-            currentPrice: rec.currentPrice?.toString(),
-            expectedReturn: rec.expectedReturn?.toString(),
-            recommendedAmount: rec.recommendedAmount?.toString(),
-          })
-        )
-      );
-
-      res.json({
-        recommendations,
-        riskAssessment: analysis.riskAssessment,
-        marketSentiment: analysis.marketSentiment,
-        riskAlert: analysis.riskAlert,
-      });
-    } catch (error) {
-      console.error("Portfolio analysis error:", error);
-      res.status(500).json({ 
-        message: "Failed to analyze portfolio", 
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  app.get("/api/portfolios/:id/recommendations", isAuthenticated, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const recommendations = await storage.getRecommendationsByPortfolio(id);
-      res.json(recommendations);
-    } catch (error) {
-      console.error("Recommendations fetch error:", error);
-      res.status(500).json({ message: "Failed to fetch recommendations" });
-    }
-  });
-
-  // Risk assessment route
-  app.post("/api/risk-assessment", isAuthenticated, async (req: any, res) => {
-    try {
-      const { investments, riskTolerance } = req.body;
-      
-      if (!investments || !riskTolerance) {
-        res.status(400).json({ message: "Investments and risk tolerance are required" });
-        return;
-      }
-
-      const assessment = await getRiskAssessment(investments, riskTolerance);
-      res.json(assessment);
-    } catch (error) {
-      console.error("Risk assessment error:", error);
-      res.status(500).json({ 
-        message: "Failed to assess risk",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    }
-  });
-
-  // Market data routes
-  app.get("/api/market-data", async (req, res) => {
-    try {
-      const marketData = await storage.getAllMarketData();
-      res.json(marketData);
-    } catch (error) {
-      console.error("Market data fetch error:", error);
+      const data = await storage.getAllMarketData();
+      res.json(data);
+    } catch {
       res.status(500).json({ message: "Failed to fetch market data" });
     }
   });
 
-  // Alpha Vantage stock data routes
+  // Live quote for a single ticker via Finnhub.
   app.get("/api/stocks/quote/:symbol", async (req, res) => {
     try {
-      const { symbol } = req.params;
-      const quote = await getStockQuote(symbol.toUpperCase());
-      if (!quote) {
-        return res.status(404).json({ message: `No data found for symbol: ${symbol}` });
-      }
+      const quote = await getStockQuote(req.params.symbol.toUpperCase());
+      if (!quote) return res.status(404).json({ message: `No data found for ${req.params.symbol}` });
       res.json(quote);
-    } catch (error) {
+    } catch {
       res.status(500).json({ message: "Failed to fetch stock quote" });
     }
   });
 
+  // Batch quotes used by the onboarding page to show live prices for suggested stocks.
   app.post("/api/stocks/quotes", async (req, res) => {
     try {
       const { symbols } = req.body;
@@ -377,61 +210,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const quotes = await getMultipleQuotes(symbols.map((s: string) => s.toUpperCase()));
       res.json(quotes);
-    } catch (error) {
+    } catch {
       res.status(500).json({ message: "Failed to fetch stock quotes" });
     }
   });
 
+  // Ticker symbol search, supports partial names, returns up to 10 matches.
   app.get("/api/stocks/search", async (req, res) => {
     try {
-      const { q } = req.query;
-      if (!q || typeof q !== "string") {
-        return res.status(400).json({ message: "Query parameter 'q' is required" });
-      }
+      const q = req.query.q as string;
+      if (!q) return res.status(400).json({ message: "Query parameter 'q' is required" });
       const results = await searchSymbol(q);
       res.json(results);
-    } catch (error) {
+    } catch {
       res.status(500).json({ message: "Failed to search stocks" });
     }
   });
 
-  // News API routes
+  // Financial news feed that returns top headlines, or results filtered by a keyword query.
   app.get("/api/news", async (req, res) => {
     try {
       const { q } = req.query;
-      const articles = q
-        ? await getFinancialNews(q as string)
-        : await getTopHeadlines();
+      const articles = q ? await getFinancialNews(q as string) : await getTopHeadlines();
       res.json(articles);
-    } catch (error) {
+    } catch {
       res.status(500).json({ message: "Failed to fetch news" });
     }
   });
 
-  // Trading signals — polled every 3 min by the frontend.
-  // Grabs the latest 10 financial headlines and asks GPT to spot BUY/SELL opportunities.
-  // Only high-confidence signals (>70%) make it through so alerts feel meaningful, not spammy.
-  app.get("/api/trading-signals", async (req, res) => {
+  // News for a specific stock symbol, shown in the Pattern Analyzer.
+  app.get("/api/news/stock/:symbol", async (req, res) => {
+    try {
+      const articles = await getStockNews(req.params.symbol.toUpperCase());
+      res.json(articles);
+    } catch {
+      res.status(500).json({ message: "Failed to fetch stock news" });
+    }
+  });
+
+  // Trading signals polled every 3 minutes by the frontend.
+  // Takes the 10 latest headlines, asks GPT to spot BUY or SELL opportunities,
+  // and only returns signals with more than 70% confidence to keep alerts meaningful.
+  app.get("/api/trading-signals", async (_req, res) => {
     try {
       const articles = await getTopHeadlines();
       if (articles.length === 0) {
         return res.json({ signals: [], generatedAt: new Date().toISOString() });
       }
 
-      // Build a compact news summary for GPT
       const newsSummary = articles
         .slice(0, 10)
-        .map((a: any, i: number) => `${i + 1}. ${a.title}${a.description ? " — " + a.description.slice(0, 120) : ""}`)
+        .map((a: any, i: number) =>
+          `${i + 1}. ${a.title}${a.description ? " - " + a.description.slice(0, 120) : ""}`
+        )
         .join("\n");
 
-      const signalPrompt = `You are a sharp trading analyst. Read these financial news headlines and identify clear, confident BUY or SELL signals for specific stocks or ETFs.
+      const prompt = `You are a sharp trading analyst. Read these financial news headlines and identify clear, confident BUY or SELL signals for specific stocks or ETFs.
 
 NEWS HEADLINES:
 ${newsSummary}
 
 Rules:
-- Only include signals where you have >70% confidence
-- Only BUY or SELL (not HOLD/WATCH)
+- Only include signals where you have more than 70% confidence
+- Only BUY or SELL (not HOLD or WATCH)
 - Ticker must be a real US stock or ETF symbol
 - Keep the reason under 15 words, plain English, no jargon
 - Max 5 signals total
@@ -453,15 +294,14 @@ Respond in JSON only:
 
       const response = await openai.chat.completions.create({
         model: "gpt-5",
-        messages: [{ role: "user", content: signalPrompt }],
+        messages: [{ role: "user", content: prompt }],
         max_tokens: 600,
         response_format: { type: "json_object" },
       });
 
-      const raw = response.choices[0].message.content || '{"signals":[]}';
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(response.choices[0].message.content || '{"signals":[]}');
 
-      // Stamp a unique ID on each signal so the frontend can tell if it's already shown it
+      // Add a unique ID to each signal so the frontend knows if it has already shown it.
       const signals = (parsed.signals || []).map((s: any, i: number) => ({
         ...s,
         id: `${s.ticker}_${Date.now()}_${i}`,
@@ -470,29 +310,20 @@ Respond in JSON only:
       res.json({ signals, generatedAt: new Date().toISOString() });
     } catch (error) {
       console.error("Trading signals error:", error);
-      // Return an empty list instead of an error — background polling should never interrupt the user
+      // Return empty rather than an error so background polling never breaks the UI.
       res.json({ signals: [], generatedAt: new Date().toISOString() });
     }
   });
 
-  app.get("/api/news/stock/:symbol", async (req, res) => {
-    try {
-      const { symbol } = req.params;
-      const articles = await getStockNews(symbol.toUpperCase());
-      res.json(articles);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch stock news" });
-    }
-  });
-
-  // Market intelligence now powered by real news
-  app.get("/api/news/analyze", async (req, res) => {
+  // Analyzes the top 3 current headlines with GPT and returns trading signals
+  // with full reasoning. Used by the Market Intelligence page's "Analyze" button.
+  app.get("/api/news/analyze", async (_req, res) => {
     try {
       const articles = await getTopHeadlines();
       if (articles.length === 0) {
         return res.json({ events: [], message: "No news available" });
       }
-      // Analyze top 3 articles with AI for trading signals
+
       const analyzed = [];
       for (const article of articles.slice(0, 3)) {
         try {
@@ -504,176 +335,27 @@ Respond in JSON only:
           });
           analyzed.push({ ...event, url: article.url, source: article.source });
         } catch {
-          // Skip articles that fail analysis
+          // Skip articles that the AI cannot parse cleanly.
         }
       }
+
       res.json({ events: analyzed });
     } catch (error) {
+      console.error("News analyze error:", error);
       res.status(500).json({ message: "Failed to analyze news" });
     }
   });
 
-  // Transaction routes
-  app.post("/api/transactions", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { portfolioId, symbol, name, action, quantity, price, totalAmount, fees, notes } = req.body;
-      
-      if (!portfolioId || !symbol || !name || !action || !quantity || !price || !totalAmount) {
-        res.status(400).json({ message: "Missing required transaction fields" });
-        return;
-      }
-
-      const transaction = await storage.createTransaction({
-        portfolioId,
-        userId: userId,
-        symbol,
-        name,
-        action,
-        quantity: quantity.toString(),
-        price: price.toString(),
-        totalAmount: totalAmount.toString(),
-        fees: fees?.toString(),
-        notes,
-      });
-
-      res.json(transaction);
-    } catch (error) {
-      console.error("Transaction creation error:", error);
-      res.status(500).json({ message: "Failed to create transaction" });
-    }
-  });
-
-  app.get("/api/portfolios/:id/transactions", isAuthenticated, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const transactions = await storage.getTransactionsByPortfolio(id);
-      res.json(transactions);
-    } catch (error) {
-      console.error("Transactions fetch error:", error);
-      res.status(500).json({ message: "Failed to fetch transactions" });
-    }
-  });
-
-  app.get("/api/users/:userId/transactions", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const transactions = await storage.getTransactionsByUser(userId);
-      res.json(transactions);
-    } catch (error) {
-      console.error("User transactions fetch error:", error);
-      res.status(500).json({ message: "Failed to fetch user transactions" });
-    }
-  });
-
-  // Desktop Notifier API endpoint (CORS enabled for local HTML files)
-  app.get("/api/notifier/recommendations", async (req, res) => {
-    // Set CORS headers for the desktop notifier
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-    res.header('Access-Control-Allow-Methods', 'GET');
-    
-    try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'API Key required' });
-      }
-
-      const apiKey = authHeader.substring(7);
-      
-      // For demo purposes, accept any API key that looks like a valid format
-      // In production, you'd validate against stored API keys
-      if (!apiKey || apiKey.length < 10) {
-        return res.status(401).json({ message: 'Invalid API Key' });
-      }
-
-      // Get sample recommendations (in production, you'd get user-specific data)
-      const sampleRecommendations = [
-        {
-          id: 'notifier-1',
-          symbol: 'AAPL',
-          name: 'Apple Inc.',
-          action: 'BUY',
-          confidence: 0.82,
-          reasoning: 'Strong quarterly earnings and product innovation pipeline.',
-          createdAt: new Date()
-        },
-        {
-          id: 'notifier-2',
-          symbol: 'TSLA',
-          name: 'Tesla, Inc.',
-          action: 'HOLD',
-          confidence: 0.75,
-          reasoning: 'Volatility expected, but long-term outlook remains positive.',
-          createdAt: new Date()
-        },
-        {
-          id: 'notifier-3',
-          symbol: 'SPY',
-          name: 'SPDR S&P 500 ETF',
-          action: 'BUY',
-          confidence: 0.88,
-          reasoning: 'Broad market exposure recommended for portfolio diversification.',
-          createdAt: new Date()
-        }
-      ];
-
-      res.json({
-        recommendations: sampleRecommendations,
-        timestamp: new Date().toISOString(),
-        status: 'success'
-      });
-    } catch (error) {
-      console.error('Notifier API error:', error);
-      res.status(500).json({ message: 'Failed to fetch recommendations' });
-    }
-  });
-
-  // Handle CORS preflight for notifier API
-  app.options("/api/notifier/recommendations", (req, res) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-    res.header('Access-Control-Allow-Methods', 'GET');
-    res.sendStatus(200);
-  });
-
-  // Image processing endpoint for portfolio data extraction
-  // Test endpoint to verify OpenAI API key is working
-  app.get("/api/test-openai", async (req, res) => {
-    try {
-      console.log("Testing OpenAI API...");
-      const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [{ role: "user", content: "Say 'API key is working'" }],
-        max_tokens: 50
-      });
-      console.log("Full OpenAI response:", JSON.stringify(response, null, 2));
-      console.log("Message content:", response.choices[0].message.content);
-      res.json({ 
-        success: true, 
-        message: response.choices[0].message.content,
-        fullResponse: response.choices[0],
-        apiKeyStatus: "working"
-      });
-    } catch (error) {
-      console.error("OpenAI API test error:", error);
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error',
-        apiKeyStatus: "failed"
-      });
-    }
-  });
-
-  // Portfolio image scanning — accepts any brokerage screenshot and uses GPT-4o vision
-  // to pull out holdings. Returns structured JSON the portfolio editor can merge directly.
-  app.post('/api/portfolio/extract-from-image', upload.single('image'), async (req, res) => {
+  // Portfolio image scan that accepts a screenshot of any brokerage account and uses
+  // GPT-4o vision to read the positions off the screen. Returns structured holdings
+  // that the portfolio editor merges directly into the user's current list.
+  app.post("/api/portfolio/extract-from-image", upload.single("image"), async (req, res) => {
     try {
       if (!req.file) {
-        return res.status(400).json({ message: 'No image file provided' });
+        return res.status(400).json({ message: "No image file provided" });
       }
 
-      const base64Image = req.file.buffer.toString('base64');
+      const base64Image = req.file.buffer.toString("base64");
       const mimeType = req.file.mimetype;
 
       const response = await openai.chat.completions.create({
@@ -683,7 +365,7 @@ Respond in JSON only:
             role: "system",
             content: `You are a financial data extraction expert. Analyze the brokerage screenshot carefully and extract every visible position.
 
-Return ONLY valid JSON in this exact shape — no markdown, no explanation:
+Return ONLY valid JSON in this exact shape, no markdown, no explanation:
 {
   "cash": 1234.56,
   "holdings": [
@@ -704,397 +386,156 @@ Rules:
 - "totalValue" is the total market value of that position.
 - If shares are not shown but total value is, set shares to 1 and averagePrice to the total value.
 - Omit positions you cannot read clearly rather than guessing.
-- Numbers must be plain numbers, no dollar signs or commas.`
+- Numbers must be plain numbers, no dollar signs or commas.`,
           },
           {
             role: "user",
             content: [
               { type: "text", text: "Extract all portfolio positions from this screenshot:" },
-              { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } }
-            ]
-          }
+              { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } },
+            ],
+          },
         ],
         response_format: { type: "json_object" },
         max_completion_tokens: 1200,
       });
 
-      const raw = response.choices[0].message.content || '{}';
-      const extracted = JSON.parse(raw);
+      const extracted = JSON.parse(response.choices[0].message.content || "{}");
 
-      // Normalise and validate each holding before returning
+      // Validate and sanitize each holding before sending it back.
       const holdings = (extracted.holdings || [])
-        .filter((h: any) => h.symbol && typeof h.symbol === 'string')
+        .filter((h: any) => h.symbol && typeof h.symbol === "string")
         .map((h: any) => ({
-          symbol: String(h.symbol).toUpperCase().replace(/[^A-Z.]/g, ''),
+          symbol: String(h.symbol).toUpperCase().replace(/[^A-Z.]/g, ""),
           shares: Math.abs(parseFloat(h.shares) || 1),
           averagePrice: Math.abs(parseFloat(h.averagePrice) || parseFloat(h.totalValue) || 0),
         }))
         .filter((h: any) => h.symbol && h.averagePrice > 0);
 
-      res.json({
-        cash: Math.abs(parseFloat(extracted.cash) || 0),
-        holdings,
-      });
-
+      res.json({ cash: Math.abs(parseFloat(extracted.cash) || 0), holdings });
     } catch (error) {
-      console.error('Image scan error:', error);
-      res.status(500).json({ message: 'Failed to read the image. Please try a clearer screenshot.' });
+      console.error("Image scan error:", error);
+      res.status(500).json({ message: "Failed to read the image. Please try a clearer screenshot." });
     }
   });
 
-  // Financial Chat API for onboarding
+  // Onboarding chat with an AI advisor that walks new users through their goals
+  // and financial situation during the first-run setup flow.
   app.post("/api/financial-chat", async (req, res) => {
     try {
       const { message, chatHistory, savingsAmount, contributionFrequency, contributionAmount } = req.body;
-      
-      const contributionInfo = contributionFrequency && contributionAmount ? 
-        (contributionFrequency === 'irregular' 
-          ? ` They plan to add money irregularly/as needed, roughly $${contributionAmount} when they can.`
-          : ` They plan to contribute $${contributionAmount} ${contributionFrequency} to their investments.`
-        ) : '';
-      
-      const systemPrompt = `You are a helpful financial advisor AI assistant. The user has $${savingsAmount} in savings and wants to start investing.${contributionInfo}
 
-Your job is to:
-1. Ask questions about their financial goals, timeline, risk tolerance, and current financial situation
-2. Be conversational and friendly
-3. Consider their planned contribution schedule when discussing investment strategies
-4. Once you have enough information about their goals and risk tolerance, set readyForSuggestions to true
-5. Keep responses concise but informative
+      const contributionNote =
+        contributionFrequency && contributionAmount
+          ? contributionFrequency === "irregular"
+            ? ` They plan to add money irregularly, roughly $${contributionAmount} when they can.`
+            : ` They plan to contribute $${contributionAmount} ${contributionFrequency}.`
+          : "";
 
-Current conversation context: The user has $${savingsAmount} in savings and is new to investing.${contributionInfo}`;
+      const systemPrompt = `You are a helpful financial advisor. The user has $${savingsAmount} in savings and wants to start investing.${contributionNote}
 
-      // Build messages array for OpenAI
-      const messages = [
-        { role: "system", content: systemPrompt },
-        ...chatHistory,
-        { role: "user", content: message }
-      ];
+Your job is to ask questions about their goals, timeline, and risk tolerance. Be conversational and concise.
+Once you have enough information, set readyForSuggestions to true in your response.`;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-        messages: messages,
+        model: "gpt-5",
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...chatHistory,
+          { role: "user", content: message },
+        ],
         max_completion_tokens: 300,
       });
 
       const aiReply = response.choices[0].message.content || "";
-      
-      // Simple logic to determine if we have enough context for suggestions
       const totalMessages = chatHistory.length + 1;
-      const readyForSuggestions = totalMessages >= 4 || 
+
+      // After 4 exchanges, or if the AI signals it has enough context, show suggestions.
+      const readyForSuggestions =
+        totalMessages >= 4 ||
         aiReply.toLowerCase().includes("ready") ||
         aiReply.toLowerCase().includes("suggest") ||
         aiReply.toLowerCase().includes("recommend");
 
-      res.json({
-        reply: aiReply,
-        readyForSuggestions
-      });
-
+      res.json({ reply: aiReply, readyForSuggestions });
     } catch (error) {
       console.error("Financial chat error:", error);
       res.status(500).json({ message: "Failed to process chat message" });
     }
   });
 
-  // Generate Investment Suggestions API
+  // Generates a full investment plan from the onboarding conversation.
+  // Returns specific tickers, dollar amounts, and reasoning for each allocation.
   app.post("/api/generate-investment-suggestions", async (req, res) => {
     try {
       const { savingsAmount, chatHistory, contributionFrequency, contributionAmount } = req.body;
-      
-      // Extract goals and preferences from chat history
+
       const conversationSummary = chatHistory
         .filter((msg: any) => msg.role === "user")
         .map((msg: any) => msg.content)
         .join(" ");
 
-      const contributionInfo = contributionFrequency && contributionAmount ? 
-        (contributionFrequency === 'irregular'
-          ? `\nIrregular contributions: roughly $${contributionAmount} when possible`
-          : `\nRegular contributions: $${contributionAmount} ${contributionFrequency}`
-        ) : '';
+      const contributionNote =
+        contributionFrequency && contributionAmount
+          ? contributionFrequency === "irregular"
+            ? `\nIrregular contributions: roughly $${contributionAmount} when possible`
+            : `\nRegular contributions: $${contributionAmount} ${contributionFrequency}`
+          : "";
 
-      const suggestionPrompt = `Based on this user's conversation and financial situation, create a specific investment plan with exact stock/ETF recommendations.
+      const prompt = `Based on this user's conversation, create a specific investment plan with exact stock and ETF recommendations.
 
-User has: $${savingsAmount} in savings${contributionInfo}
-Conversation summary: ${conversationSummary}
+User has: $${savingsAmount} in savings${contributionNote}
+Conversation: ${conversationSummary}
 
-Create a JSON response with SPECIFIC stock and ETF recommendations that include:
-1. Emergency fund allocation 
-2. Specific stocks and ETFs to buy with ticker symbols
-3. Exact dollar amounts to invest in each
-4. ${contributionFrequency === 'irregular' 
-    ? 'Simple, accessible investments for flexible contributions'
-    : 'Dollar-cost averaging strategy for regular contributions'}
-
-Format as JSON:
+Return JSON in this exact format:
 {
   "recommendations": [
     {
       "category": "Emergency Fund",
       "ticker": "HYSA",
       "name": "High-Yield Savings Account",
-      "suggestedAmount": number,
-      "percentage": number,
-      "explanation": "string explaining why this allocation",
+      "suggestedAmount": 5000,
+      "percentage": 30,
+      "explanation": "Covers 3 to 6 months of expenses before investing",
       "action": "ALLOCATE"
     },
     {
       "category": "Index Fund",
       "ticker": "SPY",
       "name": "SPDR S&P 500 ETF",
-      "suggestedAmount": number,
-      "percentage": number,
-      "explanation": "string explaining why this stock/ETF",
+      "suggestedAmount": 8000,
+      "percentage": 40,
+      "explanation": "Broad market exposure for long-term growth",
       "action": "BUY"
     }
   ],
-  "overallStrategy": "string explaining the overall approach${contributionFrequency === 'irregular' ? ' for irregular contributions' : ' and how to use regular contributions'}",
-  "nextSteps": ["array of specific action items with broker recommendations${contributionFrequency === 'irregular' ? '' : ' including how to set up automatic investing'}"]
+  "overallStrategy": "Brief explanation of the overall approach",
+  "nextSteps": ["Specific action item 1", "Specific action item 2"]
 }
 
-IMPORTANT REQUIREMENTS:
-- Include specific ticker symbols (SPY, QQQ, VTI, AAPL, MSFT, etc.)
-- Provide exact dollar amounts to invest in each
-- Mix of ETFs for diversification and individual stocks for growth
-- Consider current market conditions and popular beginner-friendly investments
-- Include at least 3-5 specific investment recommendations
-- Make sure all amounts add up to their total savings amount
-
-Popular beginner investments to consider:
-- SPY (S&P 500), QQQ (Nasdaq), VTI (Total Stock Market)
-- Individual stocks: AAPL, MSFT, GOOGL, AMZN, TSLA
-- Bond ETFs: BND, TLT for conservative allocation
-
-Make suggestions realistic and actionable with specific buy orders they can place.`;
+Requirements:
+- Include 3 to 5 recommendations with real ticker symbols
+- All amounts must add up to the total savings amount
+- Mix ETFs for diversification and individual stocks for growth potential`;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+        model: "gpt-5",
         messages: [
-          { role: "system", content: "You are a professional financial advisor providing investment allocation suggestions. Always respond with valid JSON format only." },
-          { role: "user", content: suggestionPrompt }
+          {
+            role: "system",
+            content: "You are a professional financial advisor. Respond with valid JSON only.",
+          },
+          { role: "user", content: prompt },
         ],
         max_tokens: 1000,
+        response_format: { type: "json_object" },
       });
 
-      let suggestions;
-      try {
-        suggestions = JSON.parse(response.choices[0].message.content || '{}');
-      } catch (parseError) {
-        // If JSON parsing fails, create a fallback response
-        suggestions = {
-          recommendations: [
-            {
-              category: "Emergency Fund",
-              ticker: "HYSA",
-              name: "High-Yield Savings Account",
-              suggestedAmount: Math.floor(savingsAmount * 0.3),
-              percentage: 30,
-              explanation: "Essential emergency fund for 3-6 months of expenses",
-              action: "ALLOCATE"
-            },
-            {
-              category: "Index Fund",
-              ticker: "SPY",
-              name: "SPDR S&P 500 ETF",
-              suggestedAmount: Math.floor(savingsAmount * 0.4),
-              percentage: 40,
-              explanation: "Broad market exposure for long-term growth",
-              action: "BUY"
-            },
-            {
-              category: "Technology Growth",
-              ticker: "QQQ",
-              name: "Invesco QQQ Trust",
-              suggestedAmount: Math.floor(savingsAmount * 0.3),
-              percentage: 30,
-              explanation: "Technology-focused growth for higher returns",
-              action: "BUY"
-            }
-          ],
-          overallStrategy: "Balanced approach with emergency fund, broad market exposure, and growth potential",
-          nextSteps: ["Open a brokerage account", "Set up automatic investing", "Review and rebalance quarterly"]
-        };
-      }
-      
+      const suggestions = JSON.parse(response.choices[0].message.content || "{}");
       res.json(suggestions);
-
     } catch (error) {
       console.error("Investment suggestions error:", error);
       res.status(500).json({ message: "Failed to generate investment suggestions" });
-    }
-  });
-
-  // Save Onboarding Data API
-  app.post("/api/onboarding", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { onboardingType, savingsAmount, chatHistory, investmentSuggestions } = req.body;
-      
-      // Check if user already has onboarding data
-      const existingData = await storage.getOnboardingDataByUserId(userId);
-      
-      let onboardingData;
-      if (existingData) {
-        // Update existing data
-        onboardingData = await storage.updateOnboardingData(existingData.id, {
-          onboardingType,
-          savingsAmount: savingsAmount?.toString(),
-          chatHistory,
-          investmentSuggestions,
-          completed: new Date(),
-        });
-      } else {
-        // Create new onboarding data
-        onboardingData = await storage.createOnboardingData({
-          userId,
-          onboardingType,
-          savingsAmount: savingsAmount?.toString(),
-          chatHistory,
-          investmentSuggestions,
-          completed: new Date(),
-        });
-      }
-      
-      res.json(onboardingData);
-    } catch (error) {
-      console.error("Save onboarding data error:", error);
-      res.status(500).json({ message: "Failed to save onboarding data" });
-    }
-  });
-
-  // Get Onboarding Data API
-  app.get("/api/onboarding/user", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const onboardingData = await storage.getOnboardingDataByUserId(userId);
-      
-      res.json(onboardingData || null);
-    } catch (error) {
-      console.error("Get onboarding data error:", error);
-      res.status(500).json({ message: "Failed to get onboarding data" });
-    }
-  });
-
-  // Market Intelligence API Routes
-  
-  // Process news and generate market events (admin/background task)
-  app.post("/api/market-intelligence/process-news", async (req, res) => {
-    try {
-      const newsEvents = getMockNewsEvents(); // In production, this would fetch from news APIs
-      const processedEvents = [];
-
-      for (const newsEvent of newsEvents) {
-        try {
-          // Analyze the news event with AI
-          const analysis = await analyzeNewsEvent(newsEvent);
-          
-          // Create market event in database
-          const marketEvent = await storage.createMarketEvent({
-            title: newsEvent.title,
-            description: newsEvent.description,
-            eventType: analysis.eventType,
-            affectedSymbol: analysis.affectedSymbol || null,
-            tone: analysis.tone,
-            impactLevel: analysis.impactLevel,
-            confidence: analysis.confidence,
-            sourceUrl: newsEvent.sourceUrl || null,
-            publishedAt: newsEvent.publishedAt,
-            aiAnalysis: analysis.aiAnalysis,
-          });
-
-          // Generate alerts for users if criteria met
-          if (shouldGenerateAlert(analysis)) {
-            const alertMessage = generateAlertMessage(marketEvent);
-            
-            // For now, create alerts for all authenticated users
-            // In production, this would be based on user preferences and watchlists
-            const alertType = analysis.aiAnalysis.tradingRecommendation === 'BUY' ? 'buy_opportunity' :
-                             analysis.aiAnalysis.tradingRecommendation === 'SELL' ? 'sell_opportunity' : 'watch';
-            
-            // This would typically be done in a background job for all users
-            // For demo purposes, we'll create a placeholder alert
-          }
-
-          processedEvents.push(marketEvent);
-        } catch (error) {
-          console.error(`Failed to analyze news event: ${newsEvent.title}`, error);
-        }
-      }
-
-      res.json({ processedEvents, count: processedEvents.length });
-    } catch (error) {
-      console.error("Process news error:", error);
-      res.status(500).json({ message: "Failed to process news events" });
-    }
-  });
-
-  // Get recent market events
-  app.get("/api/market-events", async (req, res) => {
-    try {
-      const limit = parseInt(req.query.limit as string) || 20;
-      const events = await storage.getRecentMarketEvents(limit);
-      res.json(events);
-    } catch (error) {
-      console.error("Get market events error:", error);
-      res.status(500).json({ message: "Failed to get market events" });
-    }
-  });
-
-  // Get user alerts
-  app.get("/api/alerts", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const alerts = await storage.getUserAlerts(userId);
-      res.json(alerts);
-    } catch (error) {
-      console.error("Get alerts error:", error);
-      res.status(500).json({ message: "Failed to get alerts" });
-    }
-  });
-
-  // Get unread user alerts
-  app.get("/api/alerts/unread", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const alerts = await storage.getUnreadUserAlerts(userId);
-      res.json(alerts);
-    } catch (error) {
-      console.error("Get unread alerts error:", error);
-      res.status(500).json({ message: "Failed to get unread alerts" });
-    }
-  });
-
-  // Mark alert as read
-  app.put("/api/alerts/:id/read", isAuthenticated, async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      await storage.markAlertAsRead(id);
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Mark alert read error:", error);
-      res.status(500).json({ message: "Failed to mark alert as read" });
-    }
-  });
-
-  // Create alert for specific user (for when they want to be notified about specific stocks)
-  app.post("/api/alerts", isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const { marketEventId, alertType, message } = req.body;
-      
-      const alert = await storage.createUserAlert({
-        userId,
-        marketEventId,
-        alertType,
-        message,
-        isRead: 0,
-      });
-      
-      res.json(alert);
-    } catch (error) {
-      console.error("Create alert error:", error);
-      res.status(500).json({ message: "Failed to create alert" });
     }
   });
 

@@ -15,7 +15,7 @@ export interface TradingSignal {
   newsHeadline?: string;
 }
 
-const POLL_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes — keeps us within free News API limits
+const POLL_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes, stays within the News API free tier rate limit
 const SEEN_KEY = "smarttrader_seen_signals"; // localStorage key for deduplication
 const MAX_SEEN = 200; // cap so we don't fill up localStorage with thousands of old IDs
 
@@ -45,7 +45,7 @@ export function useSignalPolling(enabled: boolean) {
   const isFetchingRef = useRef(false);
 
   async function fetchSignals() {
-    // Skip if a fetch is already in flight — prevents overlap on slow connections
+    // Skip if a fetch is already in flight. This prevents overlap on slow connections.
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
 
@@ -64,7 +64,7 @@ export function useSignalPolling(enabled: boolean) {
         setNewSignals(fresh); // this triggers TradingAlerts to pop them up
       }
     } catch {
-      // Silently swallow errors — background polling shouldn't interrupt the user
+      // Silently swallow errors. Background polling should never interrupt the user.
     } finally {
       isFetchingRef.current = false;
     }

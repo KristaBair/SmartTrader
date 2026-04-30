@@ -1,11 +1,11 @@
-// Everything in this app lives in localStorage — no backend accounts needed.
+// Everything in this app lives in localStorage. No backend accounts are needed.
 // Each user gets their own little namespace so profiles never bleed into each other.
 
 export interface UserProfile {
   id: string;
   firstName: string;
   lastName: string;
-  passcode: string; // plain 4-digit string — no server means no need for hashing
+  passcode: string; // plain 4-digit string. No server means no need for hashing.
   createdAt: string;
   lastLogin: string;
 }
@@ -68,7 +68,7 @@ export function createUser(firstName: string, lastName: string, passcode: string
   return user;
 }
 
-// Looks up a user by name + passcode — used at sign-in
+// Looks up a user by name and passcode. Used at sign-in.
 export function findUser(firstName: string, lastName: string, passcode: string): UserProfile | null {
   const users = getAllUsers();
   return users.find(

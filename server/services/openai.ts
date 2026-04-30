@@ -1,10 +1,12 @@
-import OpenAI from "openai";
-import { type Portfolio, type RiskTolerance, type Timeline } from "@shared/schema";
+// All GPT calls that produce investment analysis live here.
+// Each function has one job: build a prompt, call the API, and return a typed result.
 
-// the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || "default_key" 
-});
+import OpenAI from "openai";
+import { type RiskTolerance, type Timeline } from "@shared/schema";
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// ── Portfolio analysis ──────────────────────────────────────────────────────
 
 export interface InvestmentRecommendation {
   symbol: string;
@@ -29,89 +31,73 @@ export interface PortfolioAnalysis {
   riskAlert?: string;
 }
 
+// Takes the user's cash, holdings, risk profile, and timeline and asks GPT
+// for 3 to 5 ranked buy/sell recommendations with reasoning.
 export async function analyzePortfolio(
   cash: number,
   investments: string,
   riskTolerance: RiskTolerance,
   timeline: Timeline
 ): Promise<PortfolioAnalysis> {
-  try {
-    const prompt = `
-Analyze this investment portfolio and provide recommendations in JSON format:
+  const prompt = `Analyze this investment portfolio and return recommendations in JSON.
 
-Portfolio Details:
-- Available Cash: $${cash}
-- Current Investments: ${investments}
-- Risk Tolerance: ${riskTolerance}
-- Investment Timeline: ${timeline}
+Portfolio:
+- Cash available: $${cash}
+- Current holdings: ${investments}
+- Risk tolerance: ${riskTolerance}
+- Timeline: ${timeline}
 
-Please provide analysis in this exact JSON format:
+Return this exact JSON shape:
 {
   "recommendations": [
     {
-      "symbol": "STOCK_SYMBOL",
+      "symbol": "TICKER",
       "name": "Company Name",
-      "action": "BUY" or "SELL",
-      "confidence": number (1-100),
-      "reasoning": "detailed explanation",
-      "targetPrice": number (optional),
-      "currentPrice": number (optional),
-      "expectedReturn": number (percentage, optional),
-      "recommendedAmount": number (dollar amount, optional)
+      "action": "BUY or SELL",
+      "confidence": number from 1 to 100,
+      "reasoning": "plain English explanation",
+      "targetPrice": optional number,
+      "currentPrice": optional number,
+      "expectedReturn": optional percentage number,
+      "recommendedAmount": optional dollar amount
     }
   ],
   "riskAssessment": {
-    "level": "Low/Medium/High",
-    "score": number (1-100),
-    "explanation": "risk analysis explanation"
+    "level": "Low | Medium | High",
+    "score": number from 1 to 100,
+    "explanation": "what makes this portfolio more or less risky"
   },
-  "marketSentiment": "overall market sentiment analysis",
-  "riskAlert": "any important warnings or alerts (optional)"
+  "marketSentiment": "brief overall market commentary",
+  "riskAlert": "important warning if applicable, otherwise omit"
 }
 
-Guidelines:
-- Provide 3-5 specific, actionable recommendations
-- Consider the user's risk tolerance and timeline
-- Include both buy and sell recommendations if appropriate
-- Be specific about allocation amounts
-- Provide clear reasoning for each recommendation
-- Consider current market conditions
-- Include proper risk warnings
-`;
+Give 3 to 5 specific, actionable recommendations. Consider the user's risk tolerance and timeline.`;
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert financial advisor and investment analyst. Provide detailed, actionable investment recommendations based on the user's portfolio and preferences. Always respond with valid JSON format."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      response_format: { type: "json_object" },
-    });
+  const response = await openai.chat.completions.create({
+    model: "gpt-5",
+    messages: [
+      {
+        role: "system",
+        content:
+          "You are an expert financial advisor. Provide actionable recommendations based on the user's portfolio. Always respond with valid JSON.",
+      },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
 
-    const content = response.choices[0].message.content;
-    if (!content) {
-      throw new Error("No response from OpenAI");
-    }
+  const content = response.choices[0].message.content;
+  if (!content) throw new Error("No response from OpenAI");
 
-    const analysis: PortfolioAnalysis = JSON.parse(content);
-    
-    // Validate the response structure
-    if (!analysis.recommendations || !Array.isArray(analysis.recommendations)) {
-      throw new Error("Invalid response structure from OpenAI");
-    }
-
-    return analysis;
-  } catch (error) {
-    console.error("OpenAI API Error:", error);
-    throw new Error(`Failed to analyze portfolio: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  const analysis: PortfolioAnalysis = JSON.parse(content);
+  if (!analysis.recommendations || !Array.isArray(analysis.recommendations)) {
+    throw new Error("AI returned an invalid portfolio analysis structure");
   }
+
+  return analysis;
 }
+
+// ── Smart Invest ────────────────────────────────────────────────────────────
 
 export interface InvestSuggestion {
   symbol: string;
@@ -130,51 +116,45 @@ export interface InvestPlan {
   riskNote: string;
 }
 
+// Given a dollar amount and risk tolerance, returns a complete allocation plan
+// with specific tickers and dollar amounts that add up to the total.
 export async function suggestInvestment(
   amount: number,
   riskTolerance: string,
   goal?: string
 ): Promise<InvestPlan> {
-  const prompt = `
-A user wants to invest $${amount} right now.
+  const prompt = `A user wants to invest $${amount} right now.
 Risk tolerance: ${riskTolerance}
-${goal ? `Investment goal: ${goal}` : ""}
-
-Suggest a specific, actionable investment plan allocating the full $${amount} across stocks, ETFs, or funds.
+${goal ? `Goal: ${goal}` : ""}
 Today's date: ${new Date().toISOString().split("T")[0]}
 
-Respond in this exact JSON format:
+Return a specific, actionable plan in this exact JSON shape:
 {
   "totalAmount": ${amount},
   "suggestions": [
     {
       "symbol": "TICKER",
-      "name": "Full Company/Fund Name",
-      "amount": number (dollar amount to invest),
-      "allocationPercent": number (percentage of total),
-      "reasoning": "why this investment makes sense right now",
-      "confidence": number (1-100),
-      "assetType": "Stock" | "ETF" | "Index Fund" | "Bond ETF"
+      "name": "Full Company or Fund Name",
+      "amount": dollar amount to invest,
+      "allocationPercent": percentage of total,
+      "reasoning": "why this makes sense right now",
+      "confidence": number from 1 to 100,
+      "assetType": "Stock | ETF | Index Fund | Bond ETF"
     }
   ],
-  "summary": "brief overall strategy summary",
-  "riskNote": "important risk warning for this allocation"
+  "summary": "brief strategy overview",
+  "riskNote": "important risk disclaimer"
 }
 
 Rules:
 - All suggestion amounts must sum to exactly $${amount}
-- Provide 3-6 specific investments with real ticker symbols
-- Match the risk tolerance: conservative = more bonds/ETFs, aggressive = more growth stocks
-- Base suggestions on current market conditions and diversification principles
-`;
+- Include 3 to 6 investments with real ticker symbols
+- Match the risk profile: conservative leans toward bonds and ETFs, aggressive leans toward growth stocks`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-5",
     messages: [
-      {
-        role: "system",
-        content: "You are an expert financial advisor. Always respond with valid JSON only.",
-      },
+      { role: "system", content: "You are an expert financial advisor. Respond with valid JSON only." },
       { role: "user", content: prompt },
     ],
     response_format: { type: "json_object" },
@@ -184,6 +164,8 @@ Rules:
   if (!content) throw new Error("No response from AI");
   return JSON.parse(content);
 }
+
+// ── Pattern Analyzer ────────────────────────────────────────────────────────
 
 export interface StockEvent {
   date: string;
@@ -208,6 +190,8 @@ export interface PatternAnalysis {
   whatToWatchFor: string;
 }
 
+// Takes the biggest price moves for a stock along with surrounding news headlines,
+// then asks GPT to identify recurring patterns and explain them in plain English.
 export async function analyzeStockPatterns(
   ticker: string,
   companyName: string,
@@ -223,41 +207,37 @@ export async function analyzeStockPatterns(
     )
     .join("\n\n");
 
-  const prompt = `
-Look at the big price moves for ${ticker} (${companyName}) over the last 100 trading days.
-
-Here are the times it jumped up or dropped, along with news headlines from around those dates:
+  const prompt = `Look at the big price moves for ${ticker} (${companyName}) over the last several months.
 
 ${eventsText}
 
-Tell me: what news seems to move this stock up or down? What keeps happening over and over? When you see certain types of news, does the price go up or down?
+What news tends to move this stock up or down? What patterns keep repeating?
+Use plain English that a regular person can understand. Avoid jargon.
 
-Use simple, everyday language. Avoid finance jargon. A regular person should be able to understand what you're saying.
-
-Respond in this exact JSON format:
+Return this exact JSON:
 {
   "ticker": "${ticker}",
-  "patternSummary": "In 2-3 sentences, what usually moves this stock's price?",
+  "patternSummary": "2 to 3 sentences on what usually moves this stock",
   "patterns": [
     {
-      "name": "A simple pattern name",
-      "description": "What happens and why (plain English)",
+      "name": "Short descriptive pattern name",
+      "description": "What happens and why, in plain English",
       "occurrences": number,
-      "reliability": "High/Medium/Low",
-      "tradingImplication": "What should someone watching this stock do?"
+      "reliability": "High | Medium | Low",
+      "tradingImplication": "What should someone do when they see this?"
     }
   ],
-  "keyInsights": ["simple insight 1", "simple insight 2", "simple insight 3"],
-  "whatToWatchFor": "What kinds of news or events should someone keep an eye on?"
-}
-`;
+  "keyInsights": ["insight 1", "insight 2", "insight 3"],
+  "whatToWatchFor": "What kinds of news or events should investors track?"
+}`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-5",
     messages: [
       {
         role: "system",
-        content: "You are a quantitative analyst specializing in stock pattern recognition. Always respond with valid JSON only.",
+        content:
+          "You are a stock pattern analyst. Explain patterns clearly and return valid JSON only.",
       },
       { role: "user", content: prompt },
     ],
@@ -267,50 +247,4 @@ Respond in this exact JSON format:
   const content = response.choices[0].message.content;
   if (!content) throw new Error("No response from AI");
   return JSON.parse(content);
-}
-
-export async function getRiskAssessment(
-  investments: string,
-  riskTolerance: RiskTolerance
-): Promise<{ level: string; score: number; explanation: string }> {
-  try {
-    const prompt = `
-Assess the risk level of this investment portfolio:
-
-Current Investments: ${investments}
-Stated Risk Tolerance: ${riskTolerance}
-
-Provide a risk assessment in this JSON format:
-{
-  "level": "Low/Medium/High",
-  "score": number (1-100, where 1 is very low risk and 100 is very high risk),
-  "explanation": "detailed explanation of the risk assessment"
-}
-`;
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-5", // the newest OpenAI model is "gpt-5" which was released August 7, 2025. do not change this unless explicitly requested by the user
-      messages: [
-        {
-          role: "system",
-          content: "You are a risk assessment specialist. Analyze investment portfolios and provide detailed risk evaluations."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      response_format: { type: "json_object" },
-    });
-
-    const content = response.choices[0].message.content;
-    if (!content) {
-      throw new Error("No response from OpenAI");
-    }
-
-    return JSON.parse(content);
-  } catch (error) {
-    console.error("Risk Assessment Error:", error);
-    throw new Error(`Failed to assess risk: ${error instanceof Error ? error.message : 'Unknown error'}`);
-  }
 }

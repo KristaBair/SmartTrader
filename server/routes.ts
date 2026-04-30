@@ -295,7 +295,7 @@ Respond in JSON only:
       const response = await openai.chat.completions.create({
         model: "gpt-5",
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 600,
+        max_completion_tokens: 600,
         response_format: { type: "json_object" },
       });
 
@@ -527,7 +527,7 @@ Requirements:
           },
           { role: "user", content: prompt },
         ],
-        max_tokens: 1000,
+        max_completion_tokens: 1000,
         response_format: { type: "json_object" },
       });
 

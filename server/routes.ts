@@ -179,12 +179,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Market overview data shown on the dashboard (SPY, QQQ, VIX).
-  // Values come from the database, which is seeded on startup.
+  // Market overview shown on the dashboard (SPY, QQQ, VIX).
+  // Fetches live quotes from Finnhub on every request so the numbers are always current.
+  // Falls back to the database seed values if Finnhub can't return a price.
   app.get("/api/market-data", async (_req, res) => {
     try {
-      const data = await storage.getAllMarketData();
-      res.json(data);
+      const symbols = ["SPY", "QQQ", "VIX"];
+      const quotes = await getMultipleQuotes(symbols);
+
+      // Build a response that matches the MarketData shape the frontend expects.
+      // For any symbol Finnhub doesn't cover (VIX can be hit or miss), fall back to db.
+      const dbFallback = await storage.getAllMarketData();
+      const fallbackMap = Object.fromEntries(dbFallback.map((d) => [d.symbol, d]));
+
+      const result = symbols.map((sym) => {
+        const q = quotes[sym];
+        if (q && q.price > 0) {
+          return {
+            symbol: sym,
+            price: q.price.toString(),
+            change: q.change.toString(),
+            changePercent: q.changePercent.toString(),
+          };
+        }
+        return fallbackMap[sym] ?? { symbol: sym, price: "0", change: "0", changePercent: "0" };
+      });
+
+      res.json(result);
     } catch {
       res.status(500).json({ message: "Failed to fetch market data" });
     }

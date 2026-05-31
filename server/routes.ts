@@ -202,7 +202,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             changePercent: q.changePercent.toString(),
           };
         }
-        return fallbackMap[sym] ?? { symbol: sym, price: "0", change: "0", changePercent: "0" };
+        // Map the DB fallback row to the same DTO shape as the live branch.
+        const fb = fallbackMap[sym];
+        return {
+          symbol: sym,
+          price: fb?.price ?? "0",
+          change: fb?.change ?? "0",
+          changePercent: fb?.changePercent ?? "0",
+        };
       });
 
       res.json(result);

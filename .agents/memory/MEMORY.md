@@ -1,0 +1,1 @@
+- [Market data sources](market-data-sources.md) — Finnhub for live quotes, Yahoo Finance (keyless) for historical candles; Finnhub free tier blocks /stock/candle and returns c:0 for VIX.

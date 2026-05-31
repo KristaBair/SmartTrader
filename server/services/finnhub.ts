@@ -77,37 +77,55 @@ export async function getStockQuote(symbol: string): Promise<StockQuote | null> 
 }
 
 // ── Historical prices ──────────────────────────────────────────────────────
-// Finnhub /stock/candle uses Unix timestamps.
-// "compact" = last ~100 trading days, "full" = last year.
-// Returns arrays indexed in parallel: c[], h[], l[], o[], v[], t[].
+// Finnhub's free tier does not include the /stock/candle endpoint, so daily
+// history comes from Yahoo Finance's public chart API, which needs no API key.
+// "compact" = ~6 months, "full" = ~2 years.
 
 export async function getHistoricalPrices(
   symbol: string,
   outputsize: "compact" | "full" = "compact"
 ): Promise<DailyPricePoint[]> {
   try {
-    const now = Math.floor(Date.now() / 1000);
-    // compact = 6 months back, full = 2 years back
-    const daysBack = outputsize === "compact" ? 180 : 730;
-    const from = now - daysBack * 24 * 60 * 60;
+    const range = outputsize === "compact" ? "6mo" : "2y";
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+      symbol
+    )}?range=${range}&interval=1d`;
 
-    const data = await fhFetch(
-      `/stock/candle?symbol=${encodeURIComponent(symbol)}&resolution=D&from=${from}&to=${now}`
-    );
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+    });
+    if (!res.ok) return [];
 
-    if (!data || data.s !== "ok" || !Array.isArray(data.t)) return [];
+    const data = await res.json();
+    const result = data?.chart?.result?.[0];
+    const timestamps: number[] | undefined = result?.timestamp;
+    const quote = result?.indicators?.quote?.[0];
 
-    // Zip the parallel arrays into our familiar DailyPricePoint shape
-    return data.t.map((timestamp: number, i: number) => ({
-      date: new Date(timestamp * 1000).toISOString().split("T")[0],
-      open: data.o[i],
-      high: data.h[i],
-      low: data.l[i],
-      close: data.c[i],
-      volume: data.v[i],
-    }));
+    if (!Array.isArray(timestamps) || !quote) return [];
+
+    // Yahoo returns parallel arrays; some entries can be null on non-trading
+    // gaps. Keep only rows with a valid close, then coerce the remaining
+    // optional fields so every returned point matches DailyPricePoint exactly.
+    return timestamps
+      .map((timestamp: number, i: number) => ({
+        date: new Date(timestamp * 1000).toISOString().split("T")[0],
+        open: quote.open?.[i],
+        high: quote.high?.[i],
+        low: quote.low?.[i],
+        close: quote.close?.[i],
+        volume: quote.volume?.[i],
+      }))
+      .filter((p) => typeof p.close === "number")
+      .map((p) => ({
+        date: p.date,
+        open: typeof p.open === "number" ? p.open : p.close,
+        high: typeof p.high === "number" ? p.high : p.close,
+        low: typeof p.low === "number" ? p.low : p.close,
+        close: p.close,
+        volume: typeof p.volume === "number" ? p.volume : 0,
+      }));
   } catch (err) {
-    console.error(`Finnhub candles failed for ${symbol}:`, err);
+    console.error(`Yahoo history failed for ${symbol}:`, err);
     return [];
   }
 }

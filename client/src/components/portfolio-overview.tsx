@@ -1,10 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Wallet } from "lucide-react";
-import type { Portfolio } from "@shared/schema";
+import type { PortfolioView } from "@/lib/localStore";
 
 interface PortfolioOverviewProps {
-  portfolio?: Portfolio;
+  portfolio?: PortfolioView;
   isLoading: boolean;
 }
 

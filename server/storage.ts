@@ -1,4 +1,4 @@
-import { type Portfolio, type InsertPortfolio, type Recommendation, type InsertRecommendation, type MarketData, type InsertMarketData, type Transaction, type InsertTransaction, type OnboardingData, type InsertOnboardingData, type MarketEvent, type InsertMarketEvent, type UserAlert, type InsertUserAlert, type User, type UpsertUser, users, portfolios, recommendations, marketData, transactions, onboardingData, marketEvents, userAlerts } from "@shared/schema";
+import { type Recommendation, type InsertRecommendation, type MarketData, type InsertMarketData, type Transaction, type InsertTransaction, type OnboardingData, type InsertOnboardingData, type MarketEvent, type InsertMarketEvent, type UserAlert, type InsertUserAlert, type User, type UpsertUser, users, recommendations, marketData, transactions, onboardingData, marketEvents, userAlerts } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -7,12 +7,6 @@ export interface IStorage {
   // User operations - (IMPORTANT) these user operations are mandatory for Replit Auth.
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
-
-  // Portfolio methods
-  createPortfolio(portfolio: InsertPortfolio): Promise<Portfolio>;
-  getPortfolio(id: string): Promise<Portfolio | undefined>;
-  getPortfolioByUserId(userId: string): Promise<Portfolio | undefined>;
-  updatePortfolio(id: string, portfolio: Partial<InsertPortfolio>): Promise<Portfolio | undefined>;
 
   // Recommendation methods
   createRecommendation(recommendation: InsertRecommendation): Promise<Recommendation>;
@@ -100,33 +94,6 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return user;
-  }
-
-  async createPortfolio(insertPortfolio: InsertPortfolio): Promise<Portfolio> {
-    const [portfolio] = await db
-      .insert(portfolios)
-      .values(insertPortfolio)
-      .returning();
-    return portfolio;
-  }
-
-  async getPortfolio(id: string): Promise<Portfolio | undefined> {
-    const [portfolio] = await db.select().from(portfolios).where(eq(portfolios.id, id));
-    return portfolio;
-  }
-
-  async getPortfolioByUserId(userId: string): Promise<Portfolio | undefined> {
-    const [portfolio] = await db.select().from(portfolios).where(eq(portfolios.userId, userId));
-    return portfolio;
-  }
-
-  async updatePortfolio(id: string, updates: Partial<InsertPortfolio>): Promise<Portfolio | undefined> {
-    const [portfolio] = await db
-      .update(portfolios)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(portfolios.id, id))
-      .returning();
-    return portfolio;
   }
 
   async createRecommendation(insertRecommendation: InsertRecommendation): Promise<Recommendation> {

@@ -250,7 +250,7 @@ export async function runQuantAnalysis(
       _closes: closes,
     });
 
-    // Respect Alpha Vantage's free-tier rate limit (5 calls/min)
+    // Small delay between symbols to stay polite with the Yahoo Finance endpoint
     await new Promise(r => setTimeout(r, 350));
   }
 
@@ -492,7 +492,7 @@ export async function runQuantAnalysis(
   const assumptions = [
     { label: "Risk-free rate", value: `${(RISK_FREE_RATE * 100).toFixed(2)}% (US 3-month T-bill yield)` },
     { label: "Pairwise correlation ρ", value: `${ASSUMED_CORRELATION} (moderate positive, assumed uniform)` },
-    { label: "Historical window", value: "~100 trading days (Alpha Vantage compact series)" },
+    { label: "Historical window", value: "~6 months of daily closes (Yahoo Finance)" },
     { label: "Annualization factor", value: "252 trading days / year" },
     { label: "Monte Carlo model", value: "Geometric Brownian Motion (GBM), lognormal returns" },
     { label: "Monte Carlo paths", value: `${NUM_SIMULATIONS.toLocaleString()} simulations, monthly time steps` },

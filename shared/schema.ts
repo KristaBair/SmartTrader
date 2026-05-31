@@ -194,9 +194,13 @@ export type InsertMarketData = z.infer<typeof insertMarketDataSchema>;
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = z.infer<typeof insertTransactionSchema>;
 export type OnboardingData = typeof onboardingData.$inferSelect;
-export type InsertOnboardingData = z.infer<typeof insertOnboardingDataSchema>;
+// Derived from Drizzle's own insert type rather than z.infer: createInsertSchema
+// widens jsonb-array columns ($type<Array<...>>) into a shape that no longer
+// matches what .values() expects. The zod schema above is still used for runtime
+// request validation; this type is only for the storage layer's insert calls.
+export type InsertOnboardingData = typeof onboardingData.$inferInsert;
 export type MarketEvent = typeof marketEvents.$inferSelect;
-export type InsertMarketEvent = z.infer<typeof insertMarketEventSchema>;
+export type InsertMarketEvent = typeof marketEvents.$inferInsert;
 export type UserAlert = typeof userAlerts.$inferSelect;
 export type InsertUserAlert = z.infer<typeof insertUserAlertSchema>;
 export type User = typeof users.$inferSelect;

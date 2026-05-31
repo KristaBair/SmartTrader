@@ -1,11 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TrendingUp, BarChart3 } from "lucide-react";
-import type { Portfolio } from "@shared/schema";
+import type { PortfolioView } from "@/lib/localStore";
 import { useMemo } from "react";
 
 interface PortfolioGrowthChartProps {
-  portfolio?: Portfolio;
+  portfolio?: PortfolioView;
   isLoading: boolean;
 }
 

@@ -196,7 +196,7 @@ export default function Analytics() {
               Portfolio Setup
             </CardTitle>
             <p className="text-indigo-100 text-sm">
-              Enter your holdings and parameters. All analysis uses real historical price data from Alpha Vantage.
+              Enter your holdings and parameters. All analysis uses real historical price data from Yahoo Finance.
             </p>
           </CardHeader>
           <CardContent className="p-6 space-y-6">
@@ -275,7 +275,7 @@ export default function Analytics() {
             </Button>
             {isLoading && (
               <p className="text-center text-xs text-gray-500">
-                Fetching historical prices from Alpha Vantage, computing statistics, and running Monte Carlo simulation. This takes 15–40 seconds depending on number of holdings.
+                Fetching historical prices from Yahoo Finance, computing statistics, and running Monte Carlo simulation. This takes 15-40 seconds depending on number of holdings.
               </p>
             )}
           </CardContent>
@@ -690,7 +690,7 @@ export default function Analytics() {
                   {[
                     {
                       title: "1. Data & Returns",
-                      body: `We fetch the last ~100 trading days of daily closing prices for each holding using Alpha Vantage's TIME_SERIES_DAILY endpoint. From those prices we compute daily log returns: r_t = ln(P_t / P_{t-1}). Log returns are preferred over simple percentage returns in quantitative finance because they're additive across time periods and more closely approximate a normal distribution - a key assumption in most risk models.`,
+                      body: `We fetch roughly the last 6 months of daily closing prices for each holding from Yahoo Finance's daily price history. From those prices we compute daily log returns: r_t = ln(P_t / P_{t-1}). Log returns are preferred over simple percentage returns in quantitative finance because they're additive across time periods and more closely approximate a normal distribution - a key assumption in most risk models.`,
                     },
                     {
                       title: "2. Annualization",

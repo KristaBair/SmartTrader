@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import {
   getPortfolio, savePortfolio, getOnboarding, clearAll,
-  getRecommendations, saveRecommendations, type LocalPortfolio
+  getRecommendations, saveRecommendations, toPortfolioView, type LocalPortfolio
 } from "@/lib/localStore";
 import { useUser } from "@/context/UserContext";
 import PortfolioInput from "@/components/portfolio-input";
@@ -27,6 +27,10 @@ export default function Dashboard() {
   const { toast } = useToast();
 
   const onboarding = getOnboarding(user?.id);
+
+  // Memoize so unrelated re-renders don't hand the widgets a brand new object,
+  // which would otherwise re-run their internal useMemo and reshuffle the chart.
+  const portfolioView = useMemo(() => toPortfolioView(portfolio), [portfolio]);
 
   // Restore cached recommendations so the user sees their last analysis right away
   // while they wait for a fresh one (or if they haven't run one yet today)
@@ -257,9 +261,9 @@ export default function Dashboard() {
         </div>
 
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <PortfolioOverview portfolio={portfolio as any} />
+          <PortfolioOverview portfolio={portfolioView} isLoading={false} />
           <div className="space-y-8">
-            <PortfolioGrowthChart portfolio={portfolio as any} />
+            <PortfolioGrowthChart portfolio={portfolioView} isLoading={false} />
             <MarketTrends />
           </div>
         </div>

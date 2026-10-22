@@ -1,262 +1,132 @@
-import { type Recommendation, type InsertRecommendation, type MarketData, type InsertMarketData, type Transaction, type InsertTransaction, type OnboardingData, type InsertOnboardingData, type MarketEvent, type InsertMarketEvent, type UserAlert, type InsertUserAlert, type User, type UpsertUser, users, recommendations, marketData, transactions, onboardingData, marketEvents, userAlerts } from "@shared/schema";
-import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
-import { randomUUID } from "crypto";
+// DynamoDB storage. Single-table layout:
+//
+//   PK                 SK                 data
+//   USER#<cognitoSub>  PORTFOLIO          SavedPortfolio
+//   USER#<cognitoSub>  ONBOARDING         SavedOnboarding
+//   USER#<cognitoSub>  RECOMMENDATIONS    Recommendation[]
+//   MARKET#<symbol>    QUOTE              MarketData (fallback when Finnhub has no price)
+//
+// Every user item is keyed by the Cognito `sub` taken from a verified token, so one
+// user can never read or write another user's partition.
 
-export interface IStorage {
-  // User operations - (IMPORTANT) these user operations are mandatory for Replit Auth.
-  getUser(id: string): Promise<User | undefined>;
-  upsertUser(user: UpsertUser): Promise<User>;
+import {
+  BatchGetCommand,
+  BatchWriteCommand,
+  PutCommand,
+  QueryCommand,
+} from "@aws-sdk/lib-dynamodb";
+import { awsConfig, dynamo } from "./aws";
+import type {
+  MarketData,
+  Recommendation,
+  SavedOnboarding,
+  SavedPortfolio,
+  UserData,
+} from "@shared/schema";
 
-  // Recommendation methods
-  createRecommendation(recommendation: InsertRecommendation): Promise<Recommendation>;
-  getRecommendationsByPortfolio(portfolioId: string): Promise<Recommendation[]>;
-  deleteRecommendationsByPortfolio(portfolioId: string): Promise<void>;
+const TableName = awsConfig.tableName;
 
-  // Market data methods
-  upsertMarketData(marketData: InsertMarketData): Promise<MarketData>;
-  getMarketData(symbol: string): Promise<MarketData | undefined>;
-  getAllMarketData(): Promise<MarketData[]>;
+type UserItemKind = "PORTFOLIO" | "ONBOARDING" | "RECOMMENDATIONS";
 
-  // Transaction methods
-  createTransaction(transaction: InsertTransaction): Promise<Transaction>;
-  getTransactionsByPortfolio(portfolioId: string): Promise<Transaction[]>;
-  getTransactionsByUser(userId: string): Promise<Transaction[]>;
+const userPk = (userId: string) => `USER#${userId}`;
 
-  // Onboarding data methods
-  createOnboardingData(data: InsertOnboardingData): Promise<OnboardingData>;
-  getOnboardingDataByUserId(userId: string): Promise<OnboardingData | undefined>;
-  updateOnboardingData(id: string, data: Partial<InsertOnboardingData>): Promise<OnboardingData | undefined>;
-
-  // Market intelligence methods
-  createMarketEvent(event: InsertMarketEvent): Promise<MarketEvent>;
-  getMarketEvent(id: string): Promise<MarketEvent | undefined>;
-  getAllMarketEvents(): Promise<MarketEvent[]>;
-  getRecentMarketEvents(limit?: number): Promise<MarketEvent[]>;
-  
-  // User alert methods
-  createUserAlert(alert: InsertUserAlert): Promise<UserAlert>;
-  getUserAlerts(userId: string): Promise<UserAlert[]>;
-  getUnreadUserAlerts(userId: string): Promise<UserAlert[]>;
-  markAlertAsRead(alertId: string): Promise<void>;
+async function putUserItem(userId: string, sk: UserItemKind, data: unknown) {
+  await dynamo.send(
+    new PutCommand({
+      TableName,
+      Item: { PK: userPk(userId), SK: sk, data, updatedAt: new Date().toISOString() },
+    })
+  );
 }
 
-export class DatabaseStorage implements IStorage {
+export class DynamoStorage {
   constructor() {
-    // Initialize with mock market data on startup
+    // Seed fallback market data on startup
     this.initializeMarketData();
   }
 
   private async initializeMarketData() {
-    try {
-      // Check if we already have market data
-      const existingData = await db.select().from(marketData).limit(1);
-      if (existingData.length > 0) {
-        return; // Already initialized
-      }
+    const seed: MarketData[] = [
+      { symbol: "SPY", price: "432.78", change: "5.12", changePercent: "1.2" },
+      { symbol: "QQQ", price: "343.34", change: "7.68", changePercent: "2.1" },
+      { symbol: "VIX", price: "16.82", change: "-0.13", changePercent: "-0.8" },
+    ];
 
-      // Insert initial market data
-      const mockData = [
-        { symbol: "SPY", price: "432.78", change: "5.12", changePercent: "1.2" },
-        { symbol: "QQQ", price: "343.34", change: "7.68", changePercent: "2.1" },
-        { symbol: "VIX", price: "16.82", change: "-0.13", changePercent: "-0.8" },
-      ];
-
-      for (const data of mockData) {
-        await db.insert(marketData).values({
-          symbol: data.symbol,
-          price: data.price,
-          change: data.change,
-          changePercent: data.changePercent,
-        });
+    for (const data of seed) {
+      try {
+        await dynamo.send(
+          new PutCommand({
+            TableName,
+            Item: { PK: `MARKET#${data.symbol}`, SK: "QUOTE", ...data, updatedAt: new Date().toISOString() },
+            // Never overwrite a value that is already there
+            ConditionExpression: "attribute_not_exists(PK)",
+          })
+        );
+      } catch (error) {
+        if ((error as Error).name !== "ConditionalCheckFailedException") {
+          console.log("Market data initialization skipped:", error);
+        }
       }
-    } catch (error) {
-      console.log("Market data initialization skipped:", error);
     }
   }
 
-  // User operations - (IMPORTANT) these user operations are mandatory for Replit Auth.
-  async getUser(id: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.id, id));
-    return user;
+  // ── User data ──────────────────────────────────────────────────────────────
+
+  // Loads portfolio, onboarding, and recommendations in a single query.
+  async getUserData(userId: string): Promise<UserData> {
+    const result = await dynamo.send(
+      new QueryCommand({
+        TableName,
+        KeyConditionExpression: "PK = :pk",
+        ExpressionAttributeValues: { ":pk": userPk(userId) },
+      })
+    );
+
+    const bySk = Object.fromEntries((result.Items ?? []).map((item) => [item.SK, item.data]));
+    return {
+      portfolio: (bySk.PORTFOLIO as SavedPortfolio | undefined) ?? null,
+      onboarding: (bySk.ONBOARDING as SavedOnboarding | undefined) ?? null,
+      recommendations: (bySk.RECOMMENDATIONS as Recommendation[] | undefined) ?? [],
+    };
   }
 
-  async upsertUser(userData: UpsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          ...userData,
-          updatedAt: new Date(),
+  async savePortfolio(userId: string, portfolio: SavedPortfolio): Promise<void> {
+    await putUserItem(userId, "PORTFOLIO", portfolio);
+  }
+
+  async saveOnboarding(userId: string, onboarding: SavedOnboarding): Promise<void> {
+    await putUserItem(userId, "ONBOARDING", onboarding);
+  }
+
+  async saveRecommendations(userId: string, recommendations: Recommendation[]): Promise<void> {
+    await putUserItem(userId, "RECOMMENDATIONS", recommendations);
+  }
+
+  // Removes portfolio, onboarding, and recommendations (the "reset" button).
+  async clearUserData(userId: string): Promise<void> {
+    const kinds: UserItemKind[] = ["PORTFOLIO", "ONBOARDING", "RECOMMENDATIONS"];
+    await dynamo.send(
+      new BatchWriteCommand({
+        RequestItems: {
+          [TableName]: kinds.map((SK) => ({ DeleteRequest: { Key: { PK: userPk(userId), SK } } })),
         },
       })
-      .returning();
-    return user;
+    );
   }
 
-  async createRecommendation(insertRecommendation: InsertRecommendation): Promise<Recommendation> {
-    const [recommendation] = await db
-      .insert(recommendations)
-      .values(insertRecommendation)
-      .returning();
-    return recommendation;
-  }
+  // ── Market data fallback ─────────────────────────────────────────────────
 
-  async getRecommendationsByPortfolio(portfolioId: string): Promise<Recommendation[]> {
-    return await db.select().from(recommendations).where(eq(recommendations.portfolioId, portfolioId));
-  }
-
-  async deleteRecommendationsByPortfolio(portfolioId: string): Promise<void> {
-    await db.delete(recommendations).where(eq(recommendations.portfolioId, portfolioId));
-  }
-
-  async upsertMarketData(insertMarketData: InsertMarketData): Promise<MarketData> {
-    const [market] = await db
-      .insert(marketData)
-      .values(insertMarketData)
-      .onConflictDoUpdate({
-        target: marketData.symbol,
-        set: {
-          ...insertMarketData,
-          updatedAt: new Date(),
+  // Looks up stored quotes by key. Missing symbols are simply left out.
+  async getMarketDataBySymbols(symbols: string[]): Promise<MarketData[]> {
+    const result = await dynamo.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [TableName]: { Keys: symbols.map((symbol) => ({ PK: `MARKET#${symbol}`, SK: "QUOTE" })) },
         },
       })
-      .returning();
-    return market;
-  }
-
-  async getMarketData(symbol: string): Promise<MarketData | undefined> {
-    const [market] = await db.select().from(marketData).where(eq(marketData.symbol, symbol));
-    return market;
-  }
-
-  async getAllMarketData(): Promise<MarketData[]> {
-    return await db.select().from(marketData);
-  }
-
-  // Transaction methods
-  async createTransaction(insertTransaction: InsertTransaction): Promise<Transaction> {
-    const [transaction] = await db
-      .insert(transactions)
-      .values(insertTransaction)
-      .returning();
-    return transaction;
-  }
-
-  async getTransactionsByPortfolio(portfolioId: string): Promise<Transaction[]> {
-    return await db
-      .select()
-      .from(transactions)
-      .where(eq(transactions.portfolioId, portfolioId))
-      .orderBy(transactions.createdAt);
-  }
-
-  async getTransactionsByUser(userId: string): Promise<Transaction[]> {
-    return await db
-      .select()
-      .from(transactions)
-      .where(eq(transactions.userId, userId))
-      .orderBy(transactions.createdAt);
-  }
-
-  // Onboarding data methods
-  async createOnboardingData(insertOnboardingData: InsertOnboardingData): Promise<OnboardingData> {
-    const [data] = await db
-      .insert(onboardingData)
-      .values(insertOnboardingData)
-      .returning();
-    return data;
-  }
-
-  async getOnboardingDataByUserId(userId: string): Promise<OnboardingData | undefined> {
-    const [data] = await db
-      .select()
-      .from(onboardingData)
-      .where(eq(onboardingData.userId, userId))
-      .orderBy(onboardingData.createdAt);
-    return data;
-  }
-
-  async updateOnboardingData(id: string, updateData: Partial<InsertOnboardingData>): Promise<OnboardingData | undefined> {
-    const [data] = await db
-      .update(onboardingData)
-      .set({
-        ...updateData,
-        updatedAt: new Date(),
-      })
-      .where(eq(onboardingData.id, id))
-      .returning();
-    return data;
-  }
-
-  // Market intelligence methods
-  async createMarketEvent(insertMarketEvent: InsertMarketEvent): Promise<MarketEvent> {
-    const [event] = await db
-      .insert(marketEvents)
-      .values(insertMarketEvent)
-      .returning();
-    return event;
-  }
-
-  async getMarketEvent(id: string): Promise<MarketEvent | undefined> {
-    const [event] = await db
-      .select()
-      .from(marketEvents)
-      .where(eq(marketEvents.id, id));
-    return event;
-  }
-
-  async getAllMarketEvents(): Promise<MarketEvent[]> {
-    return await db
-      .select()
-      .from(marketEvents)
-      .orderBy(desc(marketEvents.publishedAt));
-  }
-
-  async getRecentMarketEvents(limit: number = 50): Promise<MarketEvent[]> {
-    return await db
-      .select()
-      .from(marketEvents)
-      .orderBy(desc(marketEvents.publishedAt))
-      .limit(limit);
-  }
-
-  // User alert methods
-  async createUserAlert(insertUserAlert: InsertUserAlert): Promise<UserAlert> {
-    const [alert] = await db
-      .insert(userAlerts)
-      .values(insertUserAlert)
-      .returning();
-    return alert;
-  }
-
-  async getUserAlerts(userId: string): Promise<UserAlert[]> {
-    return await db
-      .select()
-      .from(userAlerts)
-      .where(eq(userAlerts.userId, userId))
-      .orderBy(userAlerts.sentAt);
-  }
-
-  async getUnreadUserAlerts(userId: string): Promise<UserAlert[]> {
-    return await db
-      .select()
-      .from(userAlerts)
-      .where(and(
-        eq(userAlerts.userId, userId),
-        eq(userAlerts.isRead, 0)
-      ))
-      .orderBy(desc(userAlerts.sentAt));
-  }
-
-  async markAlertAsRead(alertId: string): Promise<void> {
-    await db
-      .update(userAlerts)
-      .set({ isRead: 1 })
-      .where(eq(userAlerts.id, alertId));
+    );
+    return (result.Responses?.[TableName] ?? []) as MarketData[];
   }
 }
 
-export const storage = new DatabaseStorage();
+export const storage = new DynamoStorage();

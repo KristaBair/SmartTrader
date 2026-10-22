@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  SmartTrader AWS backend: Cognito user pool for sign-in, DynamoDB table for user
+  InvestSmart AWS backend: Cognito user pool for sign-in, DynamoDB table for user
   data, S3 bucket for uploaded brokerage screenshots, and a least-privilege IAM
   policy for the app server (DynamoDB, S3, and Bedrock model invocation).
 

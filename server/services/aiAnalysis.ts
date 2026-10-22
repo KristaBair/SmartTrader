@@ -43,7 +43,8 @@ export async function analyzePortfolio(
   investments: string,
   riskTolerance: RiskTolerance,
   timeline: Timeline,
-  heldSymbols: string[] = []
+  heldSymbols: string[] = [],
+  linkedInvestmentSummary?: string
 ): Promise<PortfolioAnalysis> {
   const quotes: QuoteMap = heldSymbols.length > 0
     ? await getMultipleQuotes(heldSymbols.map((s) => s.toUpperCase()))
@@ -56,6 +57,11 @@ Portfolio:
 - Current holdings (symbol: average cost per share): ${investments}
 - Risk tolerance: ${riskTolerance}
 - Timeline: ${timeline}
+${linkedInvestmentSummary ? `
+User-authorized linked investment holdings:
+${linkedInvestmentSummary}
+These institution-reported values may be cached and may overlap with manually entered holdings. Do not double-count overlapping positions, and do not treat institution values as live market quotes.
+` : ""}
 
 Verified market data (the only current prices you may rely on):
 ${formatQuotesForPrompt(quotes)}

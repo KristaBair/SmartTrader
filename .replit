@@ -44,3 +44,10 @@ waitForPort = 5000
 
 [agent]
 integrations = ["javascript_openai:1.0.0", "javascript_log_in_with_replit:1.0.0", "javascript_mem_db:1.0.0", "javascript_object_storage:1.0.0", "javascript_database:1.0.0"]
+
+[userenv]
+
+[userenv.shared]
+PLAID_ENV = "sandbox"
+PLAID_PRODUCTS = "investments,transactions"
+AWS_REGION = "us-east-2"

@@ -6,6 +6,8 @@ import {
 } from "@/lib/userData";
 import { useUser } from "@/context/UserContext";
 import PortfolioInput from "@/components/portfolio-input";
+import PlaidAccountsPanel from "@/components/plaid-accounts";
+import SpendingAnalysisPanel from "@/components/spending-analysis";
 import AIRecommendations from "@/components/ai-recommendations";
 import MarketTrends from "@/components/market-trends";
 import PortfolioOverview from "@/components/portfolio-overview";
@@ -20,6 +22,7 @@ export default function Dashboard() {
   const [, navigate] = useLocation();
   const { user, signOut } = useUser();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [includeLinkedInvestments, setIncludeLinkedInvestments] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   // Pre-load the saved portfolio so the form isn't blank on return visits
@@ -59,6 +62,7 @@ export default function Dashboard() {
         symbols: current.investments.map((i) => i.symbol),
         riskTolerance: current.riskTolerance,
         timeline: current.timeline,
+        includeLinkedInvestments,
       });
       const result = await response.json();
 
@@ -69,7 +73,13 @@ export default function Dashboard() {
 
       toast({ title: "Analysis complete", description: "Your portfolio has been analyzed." });
     } catch (error) {
-      toast({ title: "Analysis failed", description: "Please try again.", variant: "destructive" });
+      const rawMessage = error instanceof Error ? error.message : "";
+      const serverMessage = rawMessage.match(/"message"\s*:\s*"([^"]+)"/)?.[1];
+      toast({
+        title: "Analysis failed",
+        description: serverMessage || "Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsAnalyzing(false);
       setLastRefresh(new Date());
@@ -98,7 +108,7 @@ export default function Dashboard() {
               <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                 <TrendingUp className="text-white h-4 w-4" />
               </div>
-              <h1 className="text-2xl font-bold text-gray-900">SmartTrader</h1>
+              <h1 className="text-2xl font-bold text-gray-900">InvestSmart</h1>
             </div>
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2 text-sm text-gray-500">
@@ -242,7 +252,11 @@ export default function Dashboard() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 space-y-4">
+            <PlaidAccountsPanel
+              onIncludeLinkedInvestmentsChange={setIncludeLinkedInvestments}
+            />
+            <SpendingAnalysisPanel />
             <PortfolioInput
               portfolio={portfolio as SavedPortfolio}
               onPortfolioChange={handlePortfolioChange}

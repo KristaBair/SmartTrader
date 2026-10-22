@@ -1,5 +1,5 @@
 /**
- * quantAnalytics.ts - The mathematical core of SmartTrader.
+ * quantAnalytics.ts - The mathematical core of InvestSmart.
  *
  * Implements real quant finance calculations:
  *   - Geometric Brownian Motion (GBM) Monte Carlo simulation

@@ -12,6 +12,7 @@
 import {
   BatchGetCommand,
   BatchWriteCommand,
+  DeleteCommand,
   PutCommand,
   QueryCommand,
 } from "@aws-sdk/lib-dynamodb";
@@ -29,6 +30,16 @@ const TableName = awsConfig.tableName;
 type UserItemKind = "PORTFOLIO" | "ONBOARDING" | "RECOMMENDATIONS";
 
 const userPk = (userId: string) => `USER#${userId}`;
+
+export interface StoredPlaidItem {
+  itemId: string;
+  encryptedAccessToken: string;
+  products?: string[];
+  institutionId?: string;
+  institutionName?: string;
+  connectedAt: string;
+  lastSyncedAt?: string;
+}
 
 async function putUserItem(userId: string, sk: UserItemKind, data: unknown) {
   await dynamo.send(
@@ -100,6 +111,45 @@ export class DynamoStorage {
 
   async saveRecommendations(userId: string, recommendations: Recommendation[]): Promise<void> {
     await putUserItem(userId, "RECOMMENDATIONS", recommendations);
+  }
+
+  async getPlaidItems(userId: string): Promise<StoredPlaidItem[]> {
+    const result = await dynamo.send(
+      new QueryCommand({
+        TableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+        ExpressionAttributeValues: {
+          ":pk": userPk(userId),
+          ":prefix": "PLAID#",
+        },
+      })
+    );
+    return (result.Items ?? [])
+      .map((item) => item.data as StoredPlaidItem | undefined)
+      .filter((item): item is StoredPlaidItem => Boolean(item?.itemId));
+  }
+
+  async savePlaidItem(userId: string, item: StoredPlaidItem): Promise<void> {
+    await dynamo.send(
+      new PutCommand({
+        TableName,
+        Item: {
+          PK: userPk(userId),
+          SK: `PLAID#${item.itemId}`,
+          data: item,
+          updatedAt: new Date().toISOString(),
+        },
+      })
+    );
+  }
+
+  async deletePlaidItem(userId: string, itemId: string): Promise<void> {
+    await dynamo.send(
+      new DeleteCommand({
+        TableName,
+        Key: { PK: userPk(userId), SK: `PLAID#${itemId}` },
+      })
+    );
   }
 
   // Removes portfolio, onboarding, and recommendations (the "reset" button).

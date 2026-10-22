@@ -4,7 +4,7 @@
 
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage, type StoredPlaidItem } from "./storage";
 import { requireAuth, getUserId, getAuthClientConfig } from "./auth";
 import { analyzePortfolio, suggestInvestment, analyzeStockPatterns, type StockEvent } from "./services/aiAnalysis";
 import { converseJson, converseText, toImageFormat, type ChatTurn } from "./services/bedrock";
@@ -19,6 +19,21 @@ import {
   savedPortfolioSchema,
 } from "@shared/schema";
 import multer from "multer";
+import { z } from "zod";
+import {
+  CountryCode,
+  Products,
+  type LinkTokenCreateRequest,
+  type PlaidApi,
+} from "plaid";
+import {
+  createPlaidClient,
+  decryptPlaidAccessToken,
+  encryptPlaidAccessToken,
+  getPlaidErrorDetails,
+  getPlaidSetupStatus,
+} from "./services/plaid";
+import { calculateSpendingAnalysis } from "./services/spendingAnalysis";
 
 interface TradingSignal {
   ticker: string;
@@ -27,6 +42,252 @@ interface TradingSignal {
   confidence: number;
   urgency: string;
   newsHeadline: string;
+}
+
+interface PlaidAccountView {
+  name: string;
+  officialName: string | null;
+  type: string;
+  subtype: string | null;
+  mask: string | null;
+  currentBalance: number | null;
+  availableBalance: number | null;
+  currency: string | null;
+}
+
+interface PlaidHoldingView {
+  accountName: string;
+  symbol: string | null;
+  securityName: string;
+  quantity: number;
+  marketValue: number | null;
+  institutionPrice: number | null;
+  costBasis: number | null;
+  currency: string | null;
+}
+
+interface PlaidTransactionView {
+  date: string;
+  name: string;
+  symbol: string | null;
+  type: string;
+  subtype: string | null;
+  amount: number;
+  quantity: number | null;
+  price: number | null;
+}
+
+interface PlaidItemView {
+  itemId: string;
+  institutionName: string;
+  products: string[];
+  connectedAt: string;
+  lastSyncedAt: string | null;
+  retrievedAt: string | null;
+  status: "connected" | "error";
+  requiresReauth: boolean;
+  errorMessage?: string;
+  accounts: PlaidAccountView[];
+  holdings: PlaidHoldingView[];
+  transactions: PlaidTransactionView[];
+  transactionsAvailable: boolean;
+}
+
+function logPlaidFailure(operation: string, error: unknown) {
+  const details = getPlaidErrorDetails(error);
+  console.warn("Plaid operation failed", {
+    operation,
+    errorCode: details.code,
+    requestId: details.requestId,
+  });
+  return details;
+}
+
+async function fetchPlaidItemSnapshot(
+  client: PlaidApi,
+  userId: string,
+  item: StoredPlaidItem,
+  includeTransactions = true
+): Promise<PlaidItemView> {
+  const itemProducts = item.products?.length ? item.products : ["investments"];
+  const hasInvestments = itemProducts.includes("investments");
+  const base = {
+    itemId: item.itemId,
+    institutionName: item.institutionName || "Investment institution",
+    products: itemProducts,
+    connectedAt: item.connectedAt,
+    lastSyncedAt: item.lastSyncedAt || null,
+    retrievedAt: null,
+    accounts: [] as PlaidAccountView[],
+    holdings: [] as PlaidHoldingView[],
+    transactions: [] as PlaidTransactionView[],
+    transactionsAvailable: false,
+    requiresReauth: false,
+  };
+
+  try {
+    const accessToken = decryptPlaidAccessToken(
+      item.encryptedAccessToken,
+      `${userId}:${item.itemId}`
+    );
+    const accountsResponse = await client.accountsGet({ access_token: accessToken });
+    const holdingsResponse = hasInvestments
+      ? await client.investmentsHoldingsGet({ access_token: accessToken })
+      : null;
+    const accountById = new Map(
+      accountsResponse.data.accounts.map((account) => [account.account_id, account])
+    );
+    const securityById = new Map(
+      holdingsResponse?.data.securities.map((security) => [security.security_id, security]) ?? []
+    );
+
+    const accounts: PlaidAccountView[] = accountsResponse.data.accounts.map((account) => ({
+      name: account.name,
+      officialName: account.official_name || null,
+      type: account.type,
+      subtype: account.subtype || null,
+      mask: account.mask || null,
+      currentBalance: account.balances.current,
+      availableBalance: account.balances.available,
+      currency: account.balances.iso_currency_code || account.balances.unofficial_currency_code || null,
+    }));
+
+    const holdings: PlaidHoldingView[] = (holdingsResponse?.data.holdings ?? []).map((holding) => {
+      const security = securityById.get(holding.security_id);
+      const account = accountById.get(holding.account_id);
+      const institutionPrice = holding.institution_price ?? null;
+      return {
+        accountName: account?.name || "Investment account",
+        symbol: security?.ticker_symbol || null,
+        securityName: security?.name || "Investment security",
+        quantity: holding.quantity,
+        marketValue: holding.institution_value
+          ?? (institutionPrice === null ? null : holding.quantity * institutionPrice),
+        institutionPrice,
+        costBasis: holding.cost_basis ?? null,
+        currency: holding.iso_currency_code || security?.iso_currency_code || null,
+      };
+    });
+
+    let transactions: PlaidTransactionView[] = [];
+    let transactionsAvailable = false;
+    let requiresReauth = false;
+    if (includeTransactions && hasInvestments) {
+      const endDate = new Date().toISOString().slice(0, 10);
+      const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      try {
+        const transactionResponse = await client.investmentsTransactionsGet({
+          access_token: accessToken,
+          start_date: startDate,
+          end_date: endDate,
+          options: { count: 100, offset: 0 },
+        });
+        const transactionSecurityById = new Map(
+          transactionResponse.data.securities.map((security) => [security.security_id, security])
+        );
+        transactions = transactionResponse.data.investment_transactions.map((transaction) => ({
+          date: transaction.date,
+          name: transaction.name,
+          symbol: transaction.security_id
+            ? transactionSecurityById.get(transaction.security_id)?.ticker_symbol || null
+            : null,
+          type: transaction.type,
+          subtype: transaction.subtype || null,
+          amount: transaction.amount,
+          quantity: transaction.quantity ?? null,
+          price: transaction.price ?? null,
+        }));
+        transactionsAvailable = true;
+      } catch (error) {
+        const details = logPlaidFailure("investment-transactions", error);
+        requiresReauth = details.code === "ITEM_LOGIN_REQUIRED";
+      }
+    }
+
+    const retrievedAt = new Date().toISOString();
+    await storage.savePlaidItem(userId, { ...item, lastSyncedAt: retrievedAt });
+    return {
+      ...base,
+      status: "connected",
+      retrievedAt,
+      accounts,
+      holdings,
+      transactions,
+      transactionsAvailable,
+      requiresReauth,
+      ...(requiresReauth
+        ? { errorMessage: "Reconnect this account to refresh all available data." }
+        : {}),
+    };
+  } catch (error) {
+    const details = logPlaidFailure("account-refresh", error);
+    const requiresReauth = details.code === "ITEM_LOGIN_REQUIRED";
+    return {
+      ...base,
+      status: "error",
+      requiresReauth,
+      errorMessage: requiresReauth
+        ? "Reconnect this account to refresh its data."
+        : "Account data could not be refreshed. Try again later.",
+    };
+  }
+}
+
+async function getPlaidAnalysisContext(userId: string): Promise<{
+  summary: string;
+  symbols: string[];
+}> {
+  const items = (await storage.getPlaidItems(userId)).filter((item) =>
+    (item.products?.length ? item.products : ["investments"]).includes("investments")
+  );
+  if (items.length === 0) throw new Error("No connected investment accounts were found.");
+
+  const client = createPlaidClient();
+  const positions = new Map<string, { quantity: number; marketValue: number; hasValue: boolean }>();
+
+  for (const item of items) {
+    const accessToken = decryptPlaidAccessToken(
+      item.encryptedAccessToken,
+      `${userId}:${item.itemId}`
+    );
+    const response = await client.investmentsHoldingsGet({ access_token: accessToken });
+    const securityById = new Map(
+      response.data.securities.map((security) => [security.security_id, security])
+    );
+    for (const holding of response.data.holdings) {
+      const symbol = securityById.get(holding.security_id)?.ticker_symbol?.trim().toUpperCase();
+      if (!symbol || !/^[A-Z0-9.\-]{1,12}$/.test(symbol)) continue;
+
+      const institutionPrice = holding.institution_price ?? null;
+      const marketValue = holding.institution_value
+        ?? (institutionPrice === null ? null : holding.quantity * institutionPrice);
+      const existing = positions.get(symbol) || { quantity: 0, marketValue: 0, hasValue: false };
+      existing.quantity += holding.quantity;
+      if (marketValue !== null && Number.isFinite(marketValue)) {
+        existing.marketValue += marketValue;
+        existing.hasValue = true;
+      }
+      positions.set(symbol, existing);
+    }
+  }
+
+  const symbols = Array.from(positions.keys()).sort();
+  const summary = symbols.length > 0
+    ? symbols.map((symbol) => {
+        const position = positions.get(symbol)!;
+        const valueText = position.hasValue
+          ? `, institution-reported value $${position.marketValue.toFixed(2)}`
+          : "";
+        return `- ${symbol}: ${position.quantity} shares${valueText}`;
+      }).join("\n")
+    : "- No tickered holdings were returned by the connected investment accounts.";
+
+  return {
+    symbols,
+    summary: `Linked holdings reported by the user's investment institutions:\n${summary}`,
+  };
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -48,6 +309,314 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Every route registered below this line requires a valid Cognito access token.
   app.use("/api", requireAuth);
+
+  app.get("/api/plaid/status", (_req, res) => {
+    res.json(getPlaidSetupStatus());
+  });
+
+  app.post("/api/plaid/link-token", async (req, res) => {
+    const body = z.object({
+      itemId: z.string().min(1).max(200).optional(),
+      purpose: z.enum(["investments", "spending"]).optional(),
+    }).safeParse(req.body ?? {});
+    if (!body.success) return res.status(400).json({ message: "Invalid Link request" });
+
+    const status = getPlaidSetupStatus();
+    if (!status.configured) {
+      return res.status(503).json({
+        code: "PLAID_NOT_CONFIGURED",
+        message: status.message || "Plaid is not configured.",
+      });
+    }
+
+    const userId = getUserId(res);
+    const product = body.data.purpose === "spending" ? "transactions" : "investments";
+    if (!status.products.includes(product)) {
+      return res.status(409).json({
+        message: `Plaid ${product} is not enabled in this Sandbox configuration.`,
+      });
+    }
+
+    try {
+      const client = createPlaidClient();
+      const linkRequest: LinkTokenCreateRequest = {
+        user: { client_user_id: userId },
+        client_name: "InvestSmart",
+        country_codes: [CountryCode.Us],
+        language: "en",
+        products: [product === "transactions" ? Products.Transactions : Products.Investments],
+        ...(process.env.PLAID_REDIRECT_URI
+          ? { redirect_uri: process.env.PLAID_REDIRECT_URI }
+          : {}),
+      };
+
+      if (body.data.itemId) {
+        const item = (await storage.getPlaidItems(userId))
+          .find((candidate) => candidate.itemId === body.data.itemId);
+        if (!item) return res.status(404).json({ message: "Connected account was not found" });
+        linkRequest.access_token = decryptPlaidAccessToken(
+          item.encryptedAccessToken,
+          `${userId}:${item.itemId}`
+        );
+        delete linkRequest.products;
+      }
+
+      const response = await client.linkTokenCreate(linkRequest);
+      res.json({ linkToken: response.data.link_token });
+    } catch (error) {
+      logPlaidFailure("link-token", error);
+      res.status(502).json({ message: "Could not start Plaid Link. Try again later." });
+    }
+  });
+
+  app.post("/api/plaid/exchange-token", async (req, res) => {
+    const body = z.object({
+      publicToken: z.string().min(1).max(500),
+      purpose: z.enum(["investments", "spending"]).optional(),
+      institution: z.object({
+        id: z.string().max(200).optional(),
+        name: z.string().max(200).optional(),
+      }).optional(),
+    }).safeParse(req.body);
+    if (!body.success) return res.status(400).json({ message: "Invalid Plaid Link response" });
+
+    const status = getPlaidSetupStatus();
+    if (!status.configured) {
+      return res.status(503).json({
+        code: "PLAID_NOT_CONFIGURED",
+        message: status.message || "Plaid is not configured.",
+      });
+    }
+
+    const userId = getUserId(res);
+    let accessTokenForCleanup: string | undefined;
+    try {
+      const client = createPlaidClient();
+      const exchange = await client.itemPublicTokenExchange({
+        public_token: body.data.publicToken,
+      });
+      accessTokenForCleanup = exchange.data.access_token;
+      const itemId = exchange.data.item_id;
+      const plaidItem = await client.itemGet({ access_token: exchange.data.access_token });
+      const itemProducts = (plaidItem.data.item.products || []).map((product) => String(product));
+      const connectedProducts = (itemProducts.length > 0
+        ? itemProducts
+        : [body.data.purpose === "spending" ? "transactions" : "investments"])
+        .filter((product) => status.products.includes(product));
+      if (connectedProducts.length === 0) {
+        throw new Error("Plaid did not return an enabled product for this connection.");
+      }
+      const existing = (await storage.getPlaidItems(userId))
+        .find((item) => item.itemId === itemId);
+      const institutionId = plaidItem.data.item.institution_id
+        || body.data.institution?.id
+        || existing?.institutionId;
+      const institutionName = plaidItem.data.item.institution_name
+        || body.data.institution?.name
+        || existing?.institutionName;
+
+      await storage.savePlaidItem(userId, {
+        itemId,
+        encryptedAccessToken: encryptPlaidAccessToken(
+          exchange.data.access_token,
+          `${userId}:${itemId}`
+        ),
+        products: connectedProducts,
+        ...(institutionId ? { institutionId } : {}),
+        ...(institutionName ? { institutionName } : {}),
+        connectedAt: existing?.connectedAt || new Date().toISOString(),
+      });
+
+      res.status(201).json({ connected: true });
+    } catch (error) {
+      if (accessTokenForCleanup) {
+        try {
+          await createPlaidClient().itemRemove({ access_token: accessTokenForCleanup });
+        } catch {
+          // Do not log or expose the access token or provider response.
+        }
+      }
+      logPlaidFailure("public-token-exchange", error);
+      res.status(502).json({ message: "Could not securely save the connected account." });
+    }
+  });
+
+  app.get("/api/plaid/accounts", async (_req, res) => {
+    const status = getPlaidSetupStatus();
+    if (!status.configured) {
+      return res.status(503).json({
+        code: "PLAID_NOT_CONFIGURED",
+        message: status.message || "Plaid is not configured.",
+      });
+    }
+
+    try {
+      const userId = getUserId(res);
+      const items = await storage.getPlaidItems(userId);
+      const client = createPlaidClient();
+      const connectedItems = await Promise.all(
+        items.map((item) => fetchPlaidItemSnapshot(client, userId, item))
+      );
+      res.json({
+        environment: status.environment,
+        retrievedAt: new Date().toISOString(),
+        items: connectedItems,
+      });
+    } catch (error) {
+      logPlaidFailure("load-accounts", error);
+      res.status(502).json({ message: "Could not load linked investment accounts." });
+    }
+  });
+
+  app.post("/api/spending/analyze", async (_req, res) => {
+    const status = getPlaidSetupStatus();
+    if (!status.configured || !status.products.includes("transactions")) {
+      return res.status(503).json({
+        code: "PLAID_TRANSACTIONS_NOT_CONFIGURED",
+        message: "Plaid Transactions is not enabled in this Sandbox configuration.",
+      });
+    }
+
+    try {
+      const userId = getUserId(res);
+      const items = (await storage.getPlaidItems(userId)).filter((item) =>
+        (item.products || []).includes("transactions")
+      );
+      if (items.length === 0) {
+        return res.status(409).json({
+          code: "NO_SPENDING_ACCOUNTS",
+          message: "Connect a checking or savings account with the spending connection button first.",
+        });
+      }
+
+      const client = createPlaidClient();
+      const periodEnd = new Date().toISOString().slice(0, 10);
+      const endTime = Date.parse(`${periodEnd}T00:00:00.000Z`);
+      const periodStart = new Date(endTime - 89 * 86_400_000).toISOString().slice(0, 10);
+      const transactions: Array<{
+        amount: number;
+        category: string;
+        primaryCategory: string;
+        pending: boolean;
+      }> = [];
+      let excludedCurrencyCount = 0;
+      const maxTransactionsPerItem = 5_000;
+
+      for (const item of items) {
+        const accessToken = decryptPlaidAccessToken(
+          item.encryptedAccessToken,
+          `${userId}:${item.itemId}`
+        );
+        let offset = 0;
+        let totalTransactions = Number.POSITIVE_INFINITY;
+        while (offset < totalTransactions && offset < maxTransactionsPerItem) {
+          const response = await client.transactionsGet({
+            access_token: accessToken,
+            start_date: periodStart,
+            end_date: periodEnd,
+            options: { count: 500, offset },
+          });
+          totalTransactions = response.data.total_transactions;
+          for (const transaction of response.data.transactions) {
+            if (transaction.iso_currency_code !== "USD") {
+              excludedCurrencyCount += 1;
+              continue;
+            }
+            const primaryCategory =
+              transaction.personal_finance_category?.primary
+              || transaction.category?.[0]
+              || "OTHER";
+            transactions.push({
+              amount: transaction.amount,
+              category:
+                transaction.personal_finance_category?.detailed
+                || primaryCategory,
+              primaryCategory,
+              pending: transaction.pending,
+            });
+          }
+          const received = response.data.transactions.length;
+          if (received === 0) break;
+          offset += received;
+        }
+
+        if (offset < totalTransactions) {
+          return res.status(422).json({
+            code: "SPENDING_TRANSACTION_LIMIT",
+            message: "Too many transactions were returned for one account. Narrow the connected accounts and try again.",
+          });
+        }
+        await storage.savePlaidItem(userId, { ...item, lastSyncedAt: new Date().toISOString() });
+      }
+
+      const analysis = calculateSpendingAnalysis(transactions, periodStart, periodEnd);
+      if (analysis.transactionsAnalyzed === 0) {
+        return res.status(422).json({
+          code: "NO_COMPLETED_TRANSACTIONS",
+          message: "There are no completed USD transactions to analyze in the last 90 days.",
+        });
+      }
+
+      res.json({
+        ...analysis,
+        currency: "USD",
+        retrievedAt: new Date().toISOString(),
+        excludedCurrencyCount,
+        notices: [
+          "This estimate uses the last 90 days of completed USD transactions. Pending transactions and transfers are excluded to reduce double-counting.",
+          "The suggested starting contribution is 50% of positive recent cash-flow surplus. It is an estimate, not financial advice, and does not account for unlinked accounts, upcoming bills, debt, or savings goals.",
+          "This report is calculated on the server. Raw transactions and merchant names are not stored in InvestSmart or sent to Amazon Bedrock.",
+          ...(excludedCurrencyCount > 0
+            ? [`${excludedCurrencyCount} non-USD or unclassified-currency transactions were excluded because no currency conversion is applied.`]
+            : []),
+        ],
+      });
+    } catch (error) {
+      logPlaidFailure("spending-analysis", error);
+      res.status(502).json({
+        message: "Could not retrieve all connected spending transactions. Reconnect the bank account and try again.",
+      });
+    }
+  });
+
+  app.post("/api/plaid/disconnect", async (req, res) => {
+    const body = z.object({ itemId: z.string().min(1).max(200) }).safeParse(req.body);
+    if (!body.success) return res.status(400).json({ message: "Invalid account request" });
+
+    try {
+      const userId = getUserId(res);
+      const item = (await storage.getPlaidItems(userId))
+        .find((candidate) => candidate.itemId === body.data.itemId);
+      if (!item) return res.status(404).json({ message: "Connected account was not found" });
+
+      let providerRevocationConfirmed = false;
+      if (getPlaidSetupStatus().configured) {
+        try {
+          const accessToken = decryptPlaidAccessToken(
+            item.encryptedAccessToken,
+            `${userId}:${item.itemId}`
+          );
+          await createPlaidClient().itemRemove({ access_token: accessToken });
+          providerRevocationConfirmed = true;
+        } catch (error) {
+          logPlaidFailure("disconnect", error);
+        }
+      }
+
+      // Always remove the local encrypted credential, even if Plaid cannot confirm revocation.
+      await storage.deletePlaidItem(userId, item.itemId);
+      res.json({
+        disconnected: true,
+        providerRevocationConfirmed,
+        ...(providerRevocationConfirmed
+          ? {}
+          : { warning: "Access was removed from InvestSmart, but Plaid could not confirm revocation." }),
+      });
+    } catch (error) {
+      logPlaidFailure("disconnect-storage", error);
+      res.status(500).json({ message: "Could not remove the connected account from InvestSmart." });
+    }
+  });
 
   // ── Signed-in user's data (DynamoDB) ─────────────────────────────────────
 
@@ -114,12 +683,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const heldSymbols = Array.isArray(symbols)
         ? symbols.filter((s: unknown): s is string => typeof s === "string" && /^[A-Za-z.\-]{1,12}$/.test(s)).slice(0, 50)
         : [];
+      let linkedInvestmentSummary: string | undefined;
+      let linkedSymbols: string[] = [];
+      if (req.body?.includeLinkedInvestments === true) {
+        try {
+          const linkedContext = await getPlaidAnalysisContext(getUserId(res));
+          linkedInvestmentSummary = linkedContext.summary;
+          linkedSymbols = linkedContext.symbols;
+        } catch (error) {
+          logPlaidFailure("analysis-context", error);
+          return res.status(503).json({
+            message: "Could not load linked investment data. Reconnect the account or turn off linked-account sharing.",
+          });
+        }
+      }
       const analysis = await analyzePortfolio(
         parseFloat(cash) || 0,
         investments || "",
         (riskTolerance || "moderate") as any,
         (timeline || "long_term") as any,
-        heldSymbols
+        Array.from(new Set([...heldSymbols, ...linkedSymbols])),
+        linkedInvestmentSummary
       );
       res.json(analysis);
     } catch (error) {

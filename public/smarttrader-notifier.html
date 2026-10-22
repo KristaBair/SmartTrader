@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SmartTrader Desktop Notifier</title>
+    <title>InvestSmart Desktop Notifier</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -106,7 +106,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>🚨 SmartTrader Desktop Notifier</h1>
+        <h1>🚨 InvestSmart Desktop Notifier</h1>
         <p>Get instant notifications when new buy/sell recommendations are available</p>
     </div>
 
@@ -118,14 +118,14 @@
         <h3>⚙️ Settings</h3>
         
         <div class="form-group">
-            <label for="serverUrl">SmartTrader Server URL:</label>
-            <input type="text" id="serverUrl" placeholder="https://your-smarttrader-app.replit.app" />
+            <label for="serverUrl">InvestSmart Server URL:</label>
+            <input type="text" id="serverUrl" placeholder="https://your-investsmart-app-domain" />
         </div>
 
         <div class="form-group">
             <label for="apiKey">API Key:</label>
-            <input type="password" id="apiKey" placeholder="Enter your API key from SmartTrader dashboard" />
-            <small>Generate this from your SmartTrader dashboard settings</small>
+            <input type="password" id="apiKey" placeholder="Enter your API key from InvestSmart dashboard" />
+            <small>Generate this from your InvestSmart dashboard settings</small>
         </div>
 
         <div class="form-group">
@@ -157,6 +157,20 @@
         let isConnected = false;
         let checkInterval;
         let lastRecommendationCount = 0;
+        const SETTINGS_KEY = 'investsmart-notifier-settings';
+        const LEGACY_SETTINGS_KEY = 'smarttrader-notifier-settings';
+
+        function loadSavedSettings() {
+            let saved = localStorage.getItem(SETTINGS_KEY);
+            if (!saved) {
+                saved = localStorage.getItem(LEGACY_SETTINGS_KEY);
+                if (saved) {
+                    localStorage.setItem(SETTINGS_KEY, saved);
+                    localStorage.removeItem(LEGACY_SETTINGS_KEY);
+                }
+            }
+            return saved;
+        }
 
         // Request notification permission on load
         if ('Notification' in window && Notification.permission === 'default') {
@@ -183,7 +197,7 @@
                 new Notification(title, {
                     body: body,
                     icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%233b82f6"><path d="M13 7h8v2h-8v-2zm0 8h8v2h-8v-2zM3 7v2h6V7H3zm0 8h6v2H3v-2z"/></svg>',
-                    tag: 'smarttrader-recommendation'
+                    tag: 'investsmart-recommendation'
                 });
             }
         }
@@ -219,7 +233,7 @@
                     const newCount = data.recommendations.length - lastRecommendationCount;
                     showNotification(
                         '🚨 New Trading Recommendations!', 
-                        `${newCount} new recommendation${newCount > 1 ? 's' : ''} available in SmartTrader`
+                        `${newCount} new recommendation${newCount > 1 ? 's' : ''} available in InvestSmart`
                     );
                     log(`🚨 ${newCount} new recommendation(s) detected!`);
                 }
@@ -272,9 +286,10 @@
                 }
 
                 // Save settings to localStorage
-                localStorage.setItem('smarttrader-notifier-settings', JSON.stringify({
+                localStorage.setItem(SETTINGS_KEY, JSON.stringify({
                     serverUrl, apiKey, interval
                 }));
+                localStorage.removeItem(LEGACY_SETTINGS_KEY);
 
                 isConnected = true;
                 btn.textContent = 'Disconnect';
@@ -291,7 +306,7 @@
 
         // Load saved settings on page load
         window.onload = function() {
-            const saved = localStorage.getItem('smarttrader-notifier-settings');
+            const saved = loadSavedSettings();
             if (saved) {
                 try {
                     const settings = JSON.parse(saved);
@@ -304,7 +319,7 @@
                 }
             }
             
-            log('SmartTrader Desktop Notifier ready');
+            log('InvestSmart Desktop Notifier ready');
             log('Please configure your settings and click Connect');
         };
 

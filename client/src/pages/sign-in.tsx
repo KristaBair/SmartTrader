@@ -200,7 +200,7 @@ export default function SignIn() {
           <TrendingUp className="text-white h-7 w-7" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">SmartTrader</h1>
+          <h1 className="text-2xl font-bold text-white tracking-tight">InvestSmart</h1>
           <p className="text-blue-300 text-xs">AI-powered investing</p>
         </div>
       </div>

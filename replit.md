@@ -2,7 +2,7 @@
 
 ## Overview
 
-SmartTrader is an AI-powered quantitative investment analysis platform with four core tools:
+InvestSmart is an AI-powered quantitative investment analysis platform with four core tools:
 
 1. **Analytics Lab** (`/analytics`) - Quantitative portfolio analysis with real math:
    - Monte Carlo simulation (1,000 paths, GBM model, monthly time steps, drift-corrected via Itô's lemma)

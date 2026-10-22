@@ -1,6 +1,6 @@
-# SmartTrader
+# InvestSmart
 
-SmartTrader is an AI-powered investment analysis platform. It combines real
+InvestSmart is an AI-powered investment analysis platform. It combines real
 quantitative finance math with live market data and AI commentary to help you
 understand a portfolio, plan new investments, and spot patterns in individual
 stocks.
@@ -65,6 +65,14 @@ These are managed as Replit Secrets:
 - `BEDROCK_MODEL_ID` (optional) — defaults to `us.anthropic.claude-sonnet-4-6`
 - `FINNHUB_API_KEY` — live stock quotes
 - `NEWS_API_KEY` — financial news headlines
+- `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_TOKEN_ENCRYPTION_KEY` — Plaid Sandbox credentials and the key used to encrypt stored access tokens
+
+Plaid's non-secret settings are `PLAID_ENV=sandbox` and
+`PLAID_PRODUCTS=investments,transactions`. Generate the token encryption key with
+`openssl rand -hex 32` and save it only in Replit Secrets. Production is blocked
+unless `PLAID_PRODUCTION_APPROVED=true` is explicitly set after approval.
+`PLAID_REDIRECT_URI` is optional and is for institutions that require an OAuth
+redirect.
 
 ## How data is stored
 
@@ -74,6 +82,25 @@ stored in DynamoDB under their Cognito user ID. Every `/api` route except
 ever reads or writes the caller's own partition. The backend keeps API keys
 secure and makes all external calls (market data, news, AI) on the client's
 behalf.
+
+## Plaid investment connections
+
+Signed-in users can connect supported investment accounts with Plaid Link.
+InvestSmart requests Plaid's Investments product for brokerages and the
+Transactions product for checking or savings accounts used by spending
+analysis. Account balances, holdings, and transactions are fetched on demand;
+the account details and raw bank transactions are not stored in InvestSmart.
+Plaid access tokens are encrypted with AES-256-GCM and stored in that user's
+DynamoDB partition.
+
+Linked holdings are sent to Amazon Bedrock only when the user checks the
+dashboard's sharing option before portfolio analysis. The analysis receives
+symbols, share counts, and institution-reported holding values, not account
+numbers, institution names, transactions, or Plaid credentials. Spending
+analysis calculates income, category spending, and potential cutbacks on the
+server; raw transactions and merchant names are not sent to Bedrock. Disconnect
+removes the local token and asks Plaid to revoke it. Production access and any
+product changes require explicit approval.
 
 ## Accounts
 

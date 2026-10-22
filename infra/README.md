@@ -1,6 +1,10 @@
 # AWS setup
 
-`smarttrader.yaml` creates everything the app needs on AWS:
+`smarttrader.yaml` defines the AWS resources used by InvestSmart:
+
+The existing CloudFormation stack, table, bucket, and IAM names retain their
+`smarttrader` identifiers for compatibility. Changing deployed resource names
+requires a separate migration and is not part of this branding update.
 
 | Resource | Purpose |
 |---|---|

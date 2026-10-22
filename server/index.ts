@@ -9,11 +9,13 @@ app.use(express.urlencoded({ extended: false }));
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
+  const isPlaidRoute = path === "/api/plaid" || path.startsWith("/api/plaid/");
+  const isSensitiveFinancialRoute = isPlaidRoute || path.startsWith("/api/spending/");
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
   const originalResJson = res.json;
   res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
+    if (!isSensitiveFinancialRoute) capturedJsonResponse = bodyJson;
     return originalResJson.apply(res, [bodyJson, ...args]);
   };
 

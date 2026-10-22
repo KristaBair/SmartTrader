@@ -1,5 +1,5 @@
 /**
- * analytics.tsx - SmartTrader Quantitative Analytics Dashboard
+ * analytics.tsx - InvestSmart Quantitative Analytics Dashboard
  *
  * Displays real statistical analysis: Monte Carlo simulation, VaR,
  * risk/return scatter, composite recommendation scores, and allocation targets.

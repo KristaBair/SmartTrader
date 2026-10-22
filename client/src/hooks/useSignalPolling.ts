@@ -16,12 +16,20 @@ export interface TradingSignal {
 }
 
 const POLL_INTERVAL_MS = 3 * 60 * 1000; // 3 minutes, stays within the News API free tier rate limit
-const SEEN_KEY = "smarttrader_seen_signals"; // localStorage key for deduplication
+const SEEN_KEY = "investsmart_seen_signals"; // localStorage key for deduplication
+const LEGACY_SEEN_KEY = "smarttrader_seen_signals";
 const MAX_SEEN = 200; // cap so we don't fill up localStorage with thousands of old IDs
 
 function getSeenIds(): Set<string> {
   try {
-    const raw = localStorage.getItem(SEEN_KEY);
+    let raw = localStorage.getItem(SEEN_KEY);
+    if (!raw) {
+      raw = localStorage.getItem(LEGACY_SEEN_KEY);
+      if (raw) {
+        localStorage.setItem(SEEN_KEY, raw);
+        localStorage.removeItem(LEGACY_SEEN_KEY);
+      }
+    }
     return new Set(raw ? JSON.parse(raw) : []);
   } catch {
     return new Set();

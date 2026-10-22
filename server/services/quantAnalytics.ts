@@ -13,7 +13,15 @@
  * Assumptions are documented in comments so the model is transparent.
  */
 
-import { getHistoricalPrices } from "./finnhub";
+import { getPriceHistory } from "./finnhub";
+import type { DataProvenance } from "./dataProvenance";
+
+// Thrown when none of the holdings have enough real price history to analyze.
+// We refuse to fill the gap with made-up numbers.
+export class InsufficientDataError extends Error {}
+
+// Fewer daily closes than this and the volatility estimate is too noisy to use.
+export const MIN_PRICE_HISTORY = 20;
 
 // -- Statistical helpers --
 
@@ -24,7 +32,7 @@ import { getHistoricalPrices } from "./finnhub";
  * 2. They're more normally distributed than simple returns
  * 3. They can't go below -100% (mathematically consistent)
  */
-function calcLogReturns(prices: number[]): number[] {
+export function calcLogReturns(prices: number[]): number[] {
   const returns: number[] = [];
   for (let i = 1; i < prices.length; i++) {
     if (prices[i - 1] > 0 && prices[i] > 0) {
@@ -34,13 +42,13 @@ function calcLogReturns(prices: number[]): number[] {
   return returns;
 }
 
-function mean(arr: number[]): number {
+export function mean(arr: number[]): number {
   if (arr.length === 0) return 0;
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
 // Sample standard deviation (divides by n-1, Bessel's correction)
-function stdDev(arr: number[]): number {
+export function stdDev(arr: number[]): number {
   if (arr.length < 2) return 0;
   const m = mean(arr);
   const variance = arr.reduce((sum, x) => sum + (x - m) ** 2, 0) / (arr.length - 1);
@@ -63,7 +71,7 @@ function sampleNormal(): number {
  * Return the p-th percentile of a pre-sorted array.
  * Uses nearest-rank method for simplicity.
  */
-function percentile(sortedArr: number[], p: number): number {
+export function percentile(sortedArr: number[], p: number): number {
   if (sortedArr.length === 0) return 0;
   const idx = Math.max(0, Math.floor((p / 100) * sortedArr.length) - 1);
   return sortedArr[idx];
@@ -156,6 +164,10 @@ export interface QuantReport {
   allocationTargets: AllocationTarget[];
   // Model assumptions surfaced for transparency
   assumptions: { label: string; value: string }[];
+  // Where each holding's price history came from and how recent it is
+  dataSources: (DataProvenance & { symbol: string; observations: number })[];
+  // Holdings left out of every calculation because real data was unavailable
+  excludedHoldings: { symbol: string; reason: string }[];
 }
 
 export interface AllocationTarget {
@@ -172,11 +184,15 @@ export async function runQuantAnalysis(
   holdings: HoldingInput[],
   cash: number,
   riskTolerance: "conservative" | "moderate" | "aggressive",
-  timeHorizonYears: number = 5
+  timeHorizonYears: number = 5,
+  // Injectable so tests can supply fixed price series instead of calling Yahoo.
+  fetchHistory: typeof getPriceHistory = getPriceHistory,
+  // Pause between symbols to stay polite with the Yahoo Finance endpoint.
+  requestDelayMs = 350
 ): Promise<QuantReport> {
 
-  // Current 3-month US T-bill yield (~5.25% as of early 2025) used as risk-free rate.
-  // This is the standard benchmark for Sharpe ratio calculation.
+  // 3-month US T-bill yield (~5.25% in early 2025) used as risk-free rate.
+  // This is a fixed assumption, not a live rate; the UI says so.
   const RISK_FREE_RATE = 0.0525;
 
   // Pairwise correlation assumption between equity holdings.
@@ -189,29 +205,25 @@ export async function runQuantAnalysis(
   // -- Step 1: Fetch historical data and compute per-holding statistics --
 
   const holdingStats: (HoldingStats & { _dailyReturns: number[]; _closes: number[] })[] = [];
+  const dataSources: QuantReport["dataSources"] = [];
+  const excludedHoldings: QuantReport["excludedHoldings"] = [];
 
   for (const h of holdings) {
-    const historicalPrices = await getHistoricalPrices(h.symbol, "compact");
-    const closes = historicalPrices.map(p => p.close);
+    const history = await fetchHistory(h.symbol, "compact");
+    const closes = history.points.map(p => p.close);
 
-    if (closes.length < 20) {
-      // Not enough data - fall back to reasonable equity defaults with a flag
-      holdingStats.push({
+    if (closes.length < MIN_PRICE_HISTORY || !history.provenance) {
+      // Not enough real data. Leave the holding out and say so, rather than
+      // substituting a made-up price or market-average return.
+      excludedHoldings.push({
         symbol: h.symbol,
-        shares: h.shares,
-        currentPrice: 100,
-        currentValue: h.shares * 100,
-        weight: 0,
-        annualizedReturn: 0.08,  // historical US equity market average
-        annualizedVolatility: 0.20,
-        sharpeRatio: (0.08 - RISK_FREE_RATE) / 0.20,
-        momentum20d: 0,
-        momentum60d: 0,
-        _dailyReturns: [],
-        _closes: [],
+        reason: closes.length === 0
+          ? "No price history was returned. Check the ticker symbol."
+          : `Only ${closes.length} daily closes available (need at least ${MIN_PRICE_HISTORY}).`,
       });
       continue;
     }
+    dataSources.push({ symbol: h.symbol, observations: closes.length, ...history.provenance });
 
     const dailyReturns = calcLogReturns(closes);
     const currentPrice = closes[closes.length - 1];
@@ -251,7 +263,13 @@ export async function runQuantAnalysis(
     });
 
     // Small delay between symbols to stay polite with the Yahoo Finance endpoint
-    await new Promise(r => setTimeout(r, 350));
+    if (requestDelayMs > 0) await new Promise(r => setTimeout(r, requestDelayMs));
+  }
+
+  if (holdingStats.length === 0) {
+    throw new InsufficientDataError(
+      `Not enough price history to analyze: ${excludedHoldings.map(e => e.symbol).join(", ")}.`
+    );
   }
 
   // -- Step 2: Portfolio weights --
@@ -490,9 +508,9 @@ export async function runQuantAnalysis(
   // ── Step 10: Surface assumptions for UI transparency ──────────────────────
 
   const assumptions = [
-    { label: "Risk-free rate", value: `${(RISK_FREE_RATE * 100).toFixed(2)}% (US 3-month T-bill yield)` },
+    { label: "Risk-free rate", value: `${(RISK_FREE_RATE * 100).toFixed(2)}% (fixed estimate of the US 3-month T-bill yield from early 2025, not a live rate)` },
     { label: "Pairwise correlation ρ", value: `${ASSUMED_CORRELATION} (moderate positive, assumed uniform)` },
-    { label: "Historical window", value: "~6 months of daily closes (Yahoo Finance)" },
+    { label: "Historical window", value: "~6 months of daily closes (Yahoo Finance, split-adjusted, dividends excluded)" },
     { label: "Annualization factor", value: "252 trading days / year" },
     { label: "Monte Carlo model", value: "Geometric Brownian Motion (GBM), lognormal returns" },
     { label: "Monte Carlo paths", value: `${NUM_SIMULATIONS.toLocaleString()} simulations, monthly time steps` },
@@ -521,5 +539,7 @@ export async function runQuantAnalysis(
     scores,
     allocationTargets,
     assumptions,
+    dataSources,
+    excludedHoldings,
   };
 }

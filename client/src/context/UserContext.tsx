@@ -1,55 +1,63 @@
 // Global user state that any component can read with useUser().
-// Keeps track of who's signed in and persists the session across page reloads.
+// The session itself is managed by Amazon Cognito, so it survives page reloads;
+// on startup we restore it and load the user's saved data from DynamoDB.
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
-import {
-  UserProfile,
-  getCurrentUser,
-  setCurrentUserId,
-  clearCurrentSession,
-  updateUserLastLogin,
-} from "@/lib/localStore";
+import { signOut as cognitoSignOut } from "aws-amplify/auth";
+import { AuthUser, loadCurrentUser } from "@/lib/auth";
+import { clearUserDataCache, loadUserData } from "@/lib/userData";
 
 interface UserContextType {
-  user: UserProfile | null;
-  signIn: (user: UserProfile) => void;
-  signOut: () => void;
+  user: AuthUser | null;
+  // True until we know whether a session exists, so the app doesn't flash the sign-in screen.
+  isLoading: boolean;
+  // Call after a successful Cognito sign-in to load the user and their data.
+  refreshUser: () => Promise<void>;
+  signOut: () => Promise<void>;
   isSignedIn: boolean;
 }
 
 // Default values are just placeholders. The real ones come from UserProvider below.
 const UserContext = createContext<UserContextType>({
   user: null,
-  signIn: () => {},
-  signOut: () => {},
+  isLoading: true,
+  refreshUser: async () => {},
+  signOut: async () => {},
   isSignedIn: false,
 });
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // When the app first loads, check if there's already a session saved.
-  // This is what keeps you signed in after a page refresh.
-  useEffect(() => {
-    const existing = getCurrentUser();
-    if (existing) {
-      setUser(existing);
+  async function refreshUser() {
+    const current = await loadCurrentUser();
+    if (current) {
+      await loadUserData();
+    } else {
+      clearUserDataCache();
     }
-  }, []);
-
-  function signIn(profile: UserProfile) {
-    setCurrentUserId(profile.id);   // save to localStorage so reload restores it
-    updateUserLastLogin(profile.id); // update the "last login" timestamp on the profile card
-    setUser(profile);
+    setUser(current);
   }
 
-  function signOut() {
-    clearCurrentSession(); // removes the stored user ID
-    setUser(null);         // clears React state, which triggers a redirect to sign-in
+  // When the app first loads, restore any existing Cognito session.
+  useEffect(() => {
+    refreshUser()
+      .catch((error) => console.error("Failed to restore session:", error))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  async function signOut() {
+    try {
+      await cognitoSignOut();
+    } finally {
+      clearUserDataCache();
+      setUser(null); // clears React state, which triggers a redirect to sign-in
+    }
   }
 
   return (
-    <UserContext.Provider value={{ user, signIn, signOut, isSignedIn: !!user }}>
+    <UserContext.Provider value={{ user, isLoading, refreshUser, signOut, isSignedIn: !!user }}>
       {children}
     </UserContext.Provider>
   );

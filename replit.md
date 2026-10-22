@@ -19,15 +19,15 @@ SmartTrader is an AI-powered quantitative investment analysis platform with four
 
 4. **Market Intelligence** (`/market-intelligence`) - Live financial news with AI trading signal analysis.
 
-All user data stored in localStorage. Each user profile is namespaced by a unique ID so multiple people can share one device. Backend secures API keys and handles all external calls (Alpha Vantage, News API, OpenAI).
+User data is stored in Amazon DynamoDB per Cognito user. Backend secures API keys and handles all external calls (Finnhub, Yahoo Finance, News API, Amazon Bedrock).
 
 ## User Profiles and Authentication
-- Sign-in screen lists existing profiles; users pick theirs and enter a 4-digit passcode
-- New accounts: first name, last name, 4-digit passcode (confirmed twice)
-- All profile data namespaced in localStorage by user ID: `smarttrader_onboarding_{id}`, `smarttrader_portfolio_{id}`, `smarttrader_recommendations_{id}`
-- Session persisted via `smarttrader_current_user` key; cleared on sign-out
-- React context (`UserContext`) provides `user`, `signIn`, `signOut` to all pages
-- No backend changes required; fully client-side
+- Amazon Cognito user pool: email + password sign-up with email verification, password reset by email
+- Client uses Amplify Auth (`client/src/lib/auth.ts`); tokens kept in cookies, not localStorage
+- Server verifies the Cognito access token on every `/api` route except `/api/auth/config` (`server/auth.ts`)
+- Portfolio, onboarding, and recommendations stored in DynamoDB under `USER#<cognito sub>` (`server/storage.ts`), loaded once at sign-in and written through on every change (`client/src/lib/userData.ts`)
+- React context (`UserContext`) provides `user`, `refreshUser`, `signOut` to all pages
+- AWS resources are defined in `infra/smarttrader.yaml`
 
 The system is built as a modern React SPA with an Express.js backend, featuring a clean separation between client and server code with shared type definitions.
 
@@ -52,25 +52,20 @@ Preferred communication style: Simple, everyday language.
 - **Development Tools**: Hot reload with Vite integration for full-stack development
 
 ### Data Storage Solutions
-- **Database**: PostgreSQL configured for production use via Drizzle ORM
-- **ORM**: Drizzle ORM with PostgreSQL dialect for type-safe database operations
-- **Schema Management**: Centralized schema definitions with automatic migrations
-- **Development Storage**: In-memory storage implementation for development/testing
-- **Session Management**: PostgreSQL-backed sessions using connect-pg-simple
+- **Database**: Amazon DynamoDB, single table (`PK`/`SK`), on-demand billing, point-in-time recovery
+- **Files**: Amazon S3 for uploaded brokerage screenshots (private, encrypted, expire after 30 days)
+- **Validation**: zod schemas in `shared/schema.ts` validate every write
 
 ### Database Schema Design
-- **Portfolios**: Stores user portfolio data with JSONB for flexible investment structures
-- **Recommendations**: AI-generated investment recommendations with confidence scores and reasoning
-- **Market Data**: Real-time market indicators (prices, changes, percentages)
-- **Type Safety**: Full TypeScript integration with runtime validation using Zod
+- `USER#<sub>` / `PORTFOLIO`, `ONBOARDING`, `RECOMMENDATIONS`: per-user saved data
+- `MARKET#<symbol>` / `QUOTE`: fallback market values when Finnhub has no price
 
 ### Authentication and Authorization
-- **Session-based**: Traditional session management with PostgreSQL storage
-- **User Identification**: Simple user ID system (currently defaulted for demo purposes)
-- **Security**: CORS configured, secure session cookies in production
+- **Amazon Cognito**: user pool + public app client (no secret, SRP sign-in, token revocation)
+- **API**: Bearer access token verified with `aws-jwt-verify`
 
 ### AI Integration Architecture
-- **Provider**: OpenAI GPT-5 integration for portfolio analysis
+- **Provider**: Anthropic Claude on Amazon Bedrock via the Converse API (`server/services/bedrock.ts`), model set by `BEDROCK_MODEL_ID`
 - **Analysis Engine**: Structured AI prompts for consistent recommendation formatting
 - **Risk Assessment**: Multi-dimensional risk analysis with scoring and explanations
 - **Market Sentiment**: Integration of market data with AI analysis for contextual recommendations
@@ -84,8 +79,8 @@ Preferred communication style: Simple, everyday language.
 ## External Dependencies
 
 ### Core Framework Dependencies
-- **@neondatabase/serverless**: Neon PostgreSQL serverless driver for database connections
-- **drizzle-orm**: Type-safe ORM for PostgreSQL with migration support
+- **@aws-sdk/client-dynamodb**, **@aws-sdk/lib-dynamodb**: DynamoDB access
+- **@aws-sdk/client-s3**: screenshot uploads
 - **express**: Node.js web framework for API server
 - **@tanstack/react-query**: Server state management and caching
 
@@ -107,9 +102,9 @@ Preferred communication style: Simple, everyday language.
 - **@hookform/resolvers**: Zod integration for React Hook Form
 
 ### AI and External Services
-- **openai**: Official OpenAI API client for GPT integration
+- **@aws-sdk/client-bedrock-runtime**: Amazon Bedrock Converse API
 - **date-fns**: Date manipulation utilities for financial calculations
 
-### Session and Security
-- **connect-pg-simple**: PostgreSQL session store for Express sessions
-- **express-session**: Session middleware for user state management
+### Authentication
+- **aws-amplify**: Cognito sign-up / sign-in in the browser
+- **aws-jwt-verify**: Cognito token verification on the server

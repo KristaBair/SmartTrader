@@ -27,8 +27,10 @@ stocks.
   Tailwind CSS, shadcn/ui (Radix primitives)
 - **Backend**: Express.js + TypeScript, serving both the API and the built
   frontend on a single port
-- **Database**: PostgreSQL via Drizzle ORM
-- **AI**: OpenAI (GPT) for analysis and recommendations
+- **Sign-in**: Amazon Cognito (email + password, via Amplify Auth)
+- **Database**: Amazon DynamoDB (one partition per signed-in user)
+- **File storage**: Amazon S3 (uploaded brokerage screenshots, auto-expiring)
+- **AI**: Anthropic Claude on Amazon Bedrock (Converse API) for analysis and recommendations
 - **Market data**: Finnhub for live quotes, Yahoo Finance (keyless) for
   historical price candles, News API for headlines
 
@@ -36,8 +38,9 @@ stocks.
 
 ```
 client/    React single-page app (pages, components, hooks, lib)
-server/    Express API, services (finnhub, openai, news, quant analytics), storage
-shared/    Drizzle schema and shared TypeScript types
+server/    Express API, Cognito auth, DynamoDB storage, services (bedrock, finnhub, news, quant analytics, S3 uploads)
+shared/    Shared TypeScript types and zod validation schemas
+infra/     CloudFormation template for the AWS resources (see infra/README.md)
 ```
 
 ## Getting started
@@ -55,21 +58,26 @@ account. The project-specific guidance is in `CLAUDE.md`.
 
 These are managed as Replit Secrets:
 
-- `DATABASE_URL` (and `PG*` connection vars) — PostgreSQL
-- `OPENAI_API_KEY` — AI analysis
+- `AWS_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` — AWS access for the server
+- `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` — sign-in
+- `DYNAMODB_TABLE` — user data
+- `S3_BUCKET` — screenshot uploads
+- `BEDROCK_MODEL_ID` (optional) — defaults to `us.anthropic.claude-sonnet-4-6`
 - `FINNHUB_API_KEY` — live stock quotes
 - `NEWS_API_KEY` — financial news headlines
 
 ## How data is stored
 
-User profiles and portfolios live in the browser's `localStorage`, namespaced by
-a unique user ID so several people can share one device. The backend keeps API
-keys secure and makes all external calls (market data, news, AI) on the client's
+Each user's portfolio, onboarding answers, and latest AI recommendations are
+stored in DynamoDB under their Cognito user ID. Every `/api` route except
+`/api/auth/config` requires a valid Cognito access token, and the server only
+ever reads or writes the caller's own partition. The backend keeps API keys
+secure and makes all external calls (market data, news, AI) on the client's
 behalf.
 
 ## Accounts
 
-- The sign-in screen lists existing profiles; pick yours and enter a 4-digit
-  passcode.
-- New accounts need a first name, last name, and a 4-digit passcode (entered
-  twice). No email or server account required.
+- Accounts are Cognito users: first name, last name, email, and a password
+  (8+ characters with upper case, lower case, and a number).
+- New accounts verify their email with a 6-digit code. Forgotten passwords are
+  reset by email.

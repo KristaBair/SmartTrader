@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import {
   getPortfolio, savePortfolio, getOnboarding, clearAll,
-  getRecommendations, saveRecommendations, toPortfolioView, type LocalPortfolio
-} from "@/lib/localStore";
+  getRecommendations, saveRecommendations, toPortfolioView, type SavedPortfolio
+} from "@/lib/userData";
 import { useUser } from "@/context/UserContext";
 import PortfolioInput from "@/components/portfolio-input";
 import AIRecommendations from "@/components/ai-recommendations";
@@ -22,11 +22,11 @@ export default function Dashboard() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
-  // Pre-load portfolio from localStorage so the form isn't blank on return visits
-  const [portfolio, setPortfolio] = useState(getPortfolio(user?.id));
+  // Pre-load the saved portfolio so the form isn't blank on return visits
+  const [portfolio, setPortfolio] = useState(getPortfolio());
   const { toast } = useToast();
 
-  const onboarding = getOnboarding(user?.id);
+  const onboarding = getOnboarding();
 
   // Memoize so unrelated re-renders don't hand the widgets a brand new object,
   // which would otherwise re-run their internal useMemo and reshuffle the chart.
@@ -35,19 +35,19 @@ export default function Dashboard() {
   // Restore cached recommendations so the user sees their last analysis right away
   // while they wait for a fresh one (or if they haven't run one yet today)
   useEffect(() => {
-    const saved = getRecommendations(user?.id);
+    const saved = getRecommendations();
     if (saved.length > 0) setRecommendations(saved);
   }, [user?.id]);
 
   // Called by the portfolio editor whenever the user changes anything.
-  // The component already saved to localStorage. We just keep React state in sync.
-  const handlePortfolioChange = (updated: LocalPortfolio) => {
+  // The component already saved it. We just keep React state in sync.
+  const handlePortfolioChange = (updated: SavedPortfolio) => {
     setPortfolio(updated);
   };
 
   // Called when the user clicks "Analyze with AI".
   // The portfolio has already been saved. We just run the analysis on it.
-  const handleAnalyze = async (current: LocalPortfolio) => {
+  const handleAnalyze = async (current: SavedPortfolio) => {
     try {
       setIsAnalyzing(true);
 
@@ -56,6 +56,7 @@ export default function Dashboard() {
         investments: current.investments
           .map((i: any) => `${i.symbol}: $${i.averagePrice || 0}`)
           .join(", "),
+        symbols: current.investments.map((i) => i.symbol),
         riskTolerance: current.riskTolerance,
         timeline: current.timeline,
       });
@@ -63,7 +64,7 @@ export default function Dashboard() {
 
       if (result.recommendations) {
         setRecommendations(result.recommendations);
-        saveRecommendations(result.recommendations, user?.id);
+        saveRecommendations(result.recommendations);
       }
 
       toast({ title: "Analysis complete", description: "Your portfolio has been analyzed." });
@@ -77,15 +78,14 @@ export default function Dashboard() {
 
   // Wipes this user's portfolio and recommendations, then sends them back through setup
   const handleReset = () => {
-    clearAll(user?.id);
+    clearAll();
     navigate("/onboarding");
   };
 
-  // Signs out and returns to the profile picker (the Router will render SignIn
+  // Signs out of Cognito and returns to the sign-in screen (the Router will render SignIn
   // automatically once user becomes null)
   const handleSignOut = () => {
-    signOut();
-    navigate("/");
+    signOut().finally(() => navigate("/"));
   };
 
   return (
@@ -244,8 +244,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
             <PortfolioInput
-              userId={user?.id}
-              portfolio={portfolio as LocalPortfolio}
+              portfolio={portfolio as SavedPortfolio}
               onPortfolioChange={handlePortfolioChange}
               onAnalyze={handleAnalyze}
               isAnalyzing={isAnalyzing}

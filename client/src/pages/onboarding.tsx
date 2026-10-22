@@ -18,7 +18,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
-import { saveOnboarding, savePortfolio } from "@/lib/localStore";
+import { saveOnboarding, savePortfolio } from "@/lib/userData";
 import { useUser } from "@/context/UserContext";
 import type { ContributionFrequency } from "@shared/schema";
 
@@ -58,7 +58,7 @@ export function Onboarding() {
       contributionAmount: 0,
       suggestions: null,
       completedAt: new Date().toISOString(),
-    }, user?.id);
+    });
     navigate("/dashboard");
   };
 
@@ -167,7 +167,7 @@ export function Onboarding() {
         riskTolerance: "moderate",
         timeline: "long_term",
         lastUpdated: new Date().toISOString(),
-      }, user?.id);
+      });
 
       saveOnboarding({
         completed: true,
@@ -176,7 +176,7 @@ export function Onboarding() {
         contributionAmount: parseFloat(contributionAmount),
         suggestions,
         completedAt: new Date().toISOString(),
-      }, user?.id);
+      });
 
       toast({
         title: "Portfolio saved! 🎉",
@@ -195,7 +195,7 @@ export function Onboarding() {
       contributionAmount: parseFloat(contributionAmount) || 0,
       suggestions,
       completedAt: new Date().toISOString(),
-    }, user?.id);
+    });
     navigate("/dashboard");
   };
 

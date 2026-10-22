@@ -31,6 +31,10 @@ export const recommendationSchema = z.object({
   currentPrice: numeric,
   expectedReturn: numeric,
   recommendedAmount: numeric,
+  // Provenance of currentPrice. Set by the server from a verified quote, never by the model.
+  priceSource: z.string().nullish(),
+  priceAsOf: z.string().nullish(),
+  priceFreshness: z.string().nullish(),
 });
 
 export type Recommendation = z.infer<typeof recommendationSchema>;

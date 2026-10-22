@@ -1,6 +1,6 @@
 // Portfolio holdings manager.
 // Shows each position as a row the user can edit in-place.
-// Every change saves immediately to localStorage so nothing is lost.
+// Every change saves immediately to your account so nothing is lost.
 // The "Analyze" button sends the current state to the AI.
 
 import { useState, useEffect, useRef } from "react";
@@ -11,7 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Brain, Plus, Trash2, Check, X, Pencil, DollarSign, TrendingUp, Camera, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { savePortfolio, type LocalPortfolio } from "@/lib/localStore";
+import { savePortfolio, type SavedPortfolio } from "@/lib/userData";
+import { authHeaders } from "@/lib/queryClient";
 
 interface Holding {
   symbol: string;
@@ -21,15 +22,14 @@ interface Holding {
 }
 
 interface PortfolioInputProps {
-  userId?: string;
-  portfolio: LocalPortfolio | null;
-  onPortfolioChange: (portfolio: LocalPortfolio) => void;
-  onAnalyze: (portfolio: LocalPortfolio) => void;
+  portfolio: SavedPortfolio | null;
+  onPortfolioChange: (portfolio: SavedPortfolio) => void;
+  onAnalyze: (portfolio: SavedPortfolio) => void;
   isAnalyzing: boolean;
 }
 
 // Build an empty portfolio shell so we always have a valid object to work from
-function emptyPortfolio(): LocalPortfolio {
+function emptyPortfolio(): SavedPortfolio {
   return {
     cash: 0,
     investments: [],
@@ -40,7 +40,6 @@ function emptyPortfolio(): LocalPortfolio {
 }
 
 export default function PortfolioInput({
-  userId,
   portfolio,
   onPortfolioChange,
   onAnalyze,
@@ -80,16 +79,16 @@ export default function PortfolioInput({
   const [editPrice, setEditPrice] = useState("");
 
   // ── Core save helper ─────────────────────────────────────────────────────
-  // Builds the LocalPortfolio object and persists it, then tells the parent
+  // Builds the SavedPortfolio object and persists it, then tells the parent
   function persist(updatedHoldings: Holding[], updatedCash?: string) {
-    const newPortfolio: LocalPortfolio = {
+    const newPortfolio: SavedPortfolio = {
       cash: parseFloat(updatedCash ?? cash) || 0,
       investments: updatedHoldings,
       riskTolerance,
       timeline,
       lastUpdated: new Date().toISOString(),
     };
-    savePortfolio(newPortfolio, userId);
+    savePortfolio(newPortfolio);
     onPortfolioChange(newPortfolio);
     return newPortfolio;
   }
@@ -105,14 +104,14 @@ export default function PortfolioInput({
     if (field === "timeline") setTimeline(value);
 
     // Persist with updated setting immediately
-    const newPortfolio: LocalPortfolio = {
+    const newPortfolio: SavedPortfolio = {
       cash: parseFloat(cash) || 0,
       investments: holdings,
       riskTolerance: field === "riskTolerance" ? value : riskTolerance,
       timeline: field === "timeline" ? value : timeline,
       lastUpdated: new Date().toISOString(),
     };
-    savePortfolio(newPortfolio, userId);
+    savePortfolio(newPortfolio);
     onPortfolioChange(newPortfolio);
   }
 
@@ -182,7 +181,7 @@ export default function PortfolioInput({
   }
 
   // ── Scan a photo of a brokerage account ─────────────────────────────────
-  // Uploads the image to GPT-4o vision, gets back structured holdings,
+  // Uploads the image (stored in S3, read by Claude on Bedrock), gets back structured holdings,
   // then merges them into the current portfolio (averaging in duplicates).
   async function handlePhotoFile(file: File) {
     if (!file.type.startsWith("image/")) {
@@ -196,6 +195,7 @@ export default function PortfolioInput({
 
       const res = await fetch("/api/portfolio/extract-from-image", {
         method: "POST",
+        headers: await authHeaders(),
         body: formData,
       });
 
@@ -262,7 +262,7 @@ export default function PortfolioInput({
       toast({ title: "Add at least one holding or some cash first", variant: "destructive" });
       return;
     }
-    const current: LocalPortfolio = {
+    const current: SavedPortfolio = {
       cash: parseFloat(cash) || 0,
       investments: holdings,
       riskTolerance,

@@ -1,2 +1,1 @@
 - [Market data sources](market-data-sources.md) — Finnhub for live quotes, Yahoo Finance (keyless) for historical candles; Finnhub free tier blocks /stock/candle and returns c:0 for VIX.
-- [drizzle-zod jsonb typing](drizzle-zod-jsonb.md) — jsonb `$type<Array<...>>` columns break z.infer for .values(); derive those Insert types from `$inferInsert` instead.

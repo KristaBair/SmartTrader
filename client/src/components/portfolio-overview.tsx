@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Wallet } from "lucide-react";
-import type { PortfolioView } from "@/lib/localStore";
+import type { PortfolioView } from "@/lib/userData";
 
 interface PortfolioOverviewProps {
   portfolio?: PortfolioView;

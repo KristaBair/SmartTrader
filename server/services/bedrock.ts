@@ -68,12 +68,14 @@ export async function converseJson<T>(options: ConverseOptions): Promise<T> {
   const system = [options.system, "Respond with a single valid JSON object only. No markdown, no commentary."]
     .filter(Boolean)
     .join("\n\n");
-  const text = await converseText({ ...options, system });
+  return extractJsonObject(await converseText({ ...options, system })) as T;
+}
 
+export function extractJsonObject(text: string): unknown {
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start === -1 || end <= start) throw new Error("AI response did not contain JSON");
-  return JSON.parse(text.slice(start, end + 1)) as T;
+  return JSON.parse(text.slice(start, end + 1));
 }
 
 // Maps an upload's MIME type to a format Bedrock accepts, or null if unsupported.

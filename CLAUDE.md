@@ -3,9 +3,10 @@
 ## Project
 
 SmartTrader is a React 18 and TypeScript frontend with an Express and TypeScript
-backend. Drizzle ORM connects the backend to PostgreSQL. The app uses Finnhub
-for live quotes, Yahoo Finance for historical candles, News API for headlines,
-and OpenAI for in-app AI analysis.
+backend. Amazon Cognito handles sign-in, Amazon DynamoDB stores user data, and
+Amazon S3 stores uploaded screenshots (resources in `infra/smarttrader.yaml`).
+The app uses Finnhub for live quotes, Yahoo Finance for historical candles,
+News API for headlines, and Claude on Amazon Bedrock for in-app AI analysis.
 
 ## Commands
 

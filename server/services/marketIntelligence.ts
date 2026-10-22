@@ -1,10 +1,8 @@
 // AI-powered news analysis used by the Market Intelligence page.
-// Takes a raw news article and asks GPT to classify it, assess its market impact,
+// Takes a raw news article and asks the model to classify it, assess its market impact,
 // and decide whether it looks like a buy, sell, hold, or watch situation.
 
-import OpenAI from "openai";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import { converseJson } from "./bedrock";
 
 export interface NewsEvent {
   title: string;
@@ -52,24 +50,12 @@ Return this exact JSON shape:
   }
 }`;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-5",
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are an expert financial analyst. Analyze news events for their market impact and return valid JSON only.",
-      },
-      { role: "user", content: prompt },
-    ],
-    response_format: { type: "json_object" },
-    max_completion_tokens: 1000,
+  const analysis = await converseJson<MarketAnalysis>({
+    system:
+      "You are an expert financial analyst. Analyze news events for their market impact and return valid JSON only.",
+    prompt,
+    maxTokens: 1000,
   });
-
-  const content = response.choices[0].message.content;
-  if (!content) throw new Error("No response from OpenAI");
-
-  const analysis: MarketAnalysis = JSON.parse(content);
 
   if (!analysis.eventType || !analysis.tone || !analysis.impactLevel) {
     throw new Error("AI returned an incomplete analysis structure");

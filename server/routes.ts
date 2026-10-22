@@ -1,23 +1,37 @@
 // All API routes live here.
-// Most routes are public because user data lives in localStorage on the client.
-// The only route that still requires Replit Auth is /api/auth/user, which is kept
-// for the session system to function correctly.
+// Everything except /api/auth/config requires a Cognito access token. User data
+// (portfolio, onboarding, recommendations) is stored in DynamoDB per Cognito user.
 
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { analyzePortfolio, suggestInvestment, analyzeStockPatterns, type StockEvent } from "./services/openai";
-import { runQuantAnalysis } from "./services/quantAnalytics";
+import { requireAuth, getUserId, getAuthClientConfig } from "./auth";
+import { analyzePortfolio, suggestInvestment, analyzeStockPatterns, type StockEvent } from "./services/aiAnalysis";
+import { converseJson, converseText, toImageFormat, type ChatTurn } from "./services/bedrock";
+import { saveScreenshot } from "./services/uploads";
+import { runQuantAnalysis, InsufficientDataError } from "./services/quantAnalytics";
 import { analyzeNewsEvent } from "./services/marketIntelligence";
 import { getStockQuote, getMultipleQuotes, searchSymbol, getHistoricalPrices } from "./services/finnhub";
 import { getFinancialNews, getStockNews, getTopHeadlines, getNewsByDateRange } from "./services/newsApi";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import {
+  recommendationSchema,
+  savedOnboardingSchema,
+  savedPortfolioSchema,
+} from "@shared/schema";
 import multer from "multer";
-import OpenAI from "openai";
+
+interface TradingSignal {
+  ticker: string;
+  action: "BUY" | "SELL";
+  reason: string;
+  confidence: number;
+  urgency: string;
+  newsHeadline: string;
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Multer stores uploaded images in memory so we can pass them directly
-  // to OpenAI vision without writing temporary files to disk.
+  // Multer holds the upload in memory; the route then stores it in S3 and passes
+  // the same bytes to Bedrock, so nothing is written to local disk.
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB cap
@@ -27,18 +41,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   });
 
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  // Public Cognito settings the browser needs before anyone has signed in.
+  app.get("/api/auth/config", (_req, res) => {
+    res.json(getAuthClientConfig());
+  });
 
-  // Replit Auth setup (required for the session table and /api/auth/user to work).
-  await setupAuth(app);
+  // Every route registered below this line requires a valid Cognito access token.
+  app.use("/api", requireAuth);
 
-  // Returns the currently signed-in Replit user. Used by the auth session system.
-  app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
+  // ── Signed-in user's data (DynamoDB) ─────────────────────────────────────
+
+  app.get("/api/me/data", async (_req, res) => {
     try {
-      const user = await storage.getUser(req.user.claims.sub);
-      res.json(user);
-    } catch {
-      res.status(500).json({ message: "Failed to fetch user" });
+      res.json(await storage.getUserData(getUserId(res)));
+    } catch (error) {
+      console.error("Load user data error:", error);
+      res.status(500).json({ message: "Failed to load your data" });
+    }
+  });
+
+  app.put("/api/me/portfolio", async (req, res) => {
+    const parsed = savedPortfolioSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Invalid portfolio" });
+    try {
+      await storage.savePortfolio(getUserId(res), parsed.data);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Save portfolio error:", error);
+      res.status(500).json({ message: "Failed to save portfolio" });
+    }
+  });
+
+  app.put("/api/me/onboarding", async (req, res) => {
+    const parsed = savedOnboardingSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Invalid onboarding data" });
+    try {
+      await storage.saveOnboarding(getUserId(res), parsed.data);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Save onboarding error:", error);
+      res.status(500).json({ message: "Failed to save onboarding" });
+    }
+  });
+
+  app.put("/api/me/recommendations", async (req, res) => {
+    const parsed = recommendationSchema.array().max(50).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ message: "Invalid recommendations" });
+    try {
+      await storage.saveRecommendations(getUserId(res), parsed.data);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Save recommendations error:", error);
+      res.status(500).json({ message: "Failed to save recommendations" });
+    }
+  });
+
+  app.delete("/api/me/data", async (_req, res) => {
+    try {
+      await storage.clearUserData(getUserId(res));
+      res.status(204).end();
+    } catch (error) {
+      console.error("Clear user data error:", error);
+      res.status(500).json({ message: "Failed to reset your data" });
     }
   });
 
@@ -46,12 +110,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Accepts the current holdings and returns ranked buy/sell recommendations.
   app.post("/api/portfolios/analyze-direct", async (req, res) => {
     try {
-      const { cash, investments, riskTolerance, timeline } = req.body;
+      const { cash, investments, riskTolerance, timeline, symbols } = req.body;
+      const heldSymbols = Array.isArray(symbols)
+        ? symbols.filter((s: unknown): s is string => typeof s === "string" && /^[A-Za-z.\-]{1,12}$/.test(s)).slice(0, 50)
+        : [];
       const analysis = await analyzePortfolio(
         parseFloat(cash) || 0,
         investments || "",
         (riskTolerance || "moderate") as any,
-        (timeline || "long_term") as any
+        (timeline || "long_term") as any,
+        heldSymbols
       );
       res.json(analysis);
     } catch (error) {
@@ -80,6 +148,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       );
       res.json(report);
     } catch (error) {
+      if (error instanceof InsufficientDataError) {
+        return res.status(422).json({ message: error.message });
+      }
       console.error("Quant analysis error:", error);
       res.status(500).json({ message: "Quantitative analysis failed. Please try again." });
     }
@@ -102,7 +173,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Pattern Analyzer fetches historical prices, finds the biggest single-day moves,
-  // pulls news from around those dates, and asks GPT to explain the patterns it sees.
+  // pulls news from around those dates, and asks the model to explain the patterns it sees.
   app.post("/api/patterns/analyze", async (req, res) => {
     try {
       const { ticker } = req.body;
@@ -181,15 +252,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Market overview shown on the dashboard (SPY, QQQ, VIX).
   // Fetches live quotes from Finnhub on every request so the numbers are always current.
-  // Falls back to the database seed values if Finnhub can't return a price.
+  // Falls back to the DynamoDB seed values if Finnhub can't return a price.
   app.get("/api/market-data", async (_req, res) => {
     try {
       const symbols = ["SPY", "QQQ", "VIX"];
       const quotes = await getMultipleQuotes(symbols);
 
       // Build a response that matches the MarketData shape the frontend expects.
-      // For any symbol Finnhub doesn't cover (VIX can be hit or miss), fall back to db.
-      const dbFallback = await storage.getAllMarketData();
+      // For any symbol Finnhub doesn't cover (VIX can be hit or miss), fall back to DynamoDB.
+      const dbFallback = await storage.getMarketDataBySymbols(symbols);
       const fallbackMap = Object.fromEntries(dbFallback.map((d) => [d.symbol, d]));
 
       const result = symbols.map((sym) => {
@@ -277,7 +348,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Trading signals polled every 3 minutes by the frontend.
-  // Takes the 10 latest headlines, asks GPT to spot BUY or SELL opportunities,
+  // Takes the 10 latest headlines, asks the model to spot BUY or SELL opportunities,
   // and only returns signals with more than 70% confidence to keep alerts meaningful.
   app.get("/api/trading-signals", async (_req, res) => {
     try {
@@ -320,17 +391,10 @@ Respond in JSON only:
   ]
 }`;
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-5",
-        messages: [{ role: "user", content: prompt }],
-        max_completion_tokens: 600,
-        response_format: { type: "json_object" },
-      });
-
-      const parsed = JSON.parse(response.choices[0].message.content || '{"signals":[]}');
+      const parsed = await converseJson<{ signals?: TradingSignal[] }>({ prompt, maxTokens: 600 });
 
       // Add a unique ID to each signal so the frontend knows if it has already shown it.
-      const signals = (parsed.signals || []).map((s: any, i: number) => ({
+      const signals = (parsed.signals || []).map((s, i) => ({
         ...s,
         id: `${s.ticker}_${Date.now()}_${i}`,
       }));
@@ -343,7 +407,7 @@ Respond in JSON only:
     }
   });
 
-  // Analyzes the top 3 current headlines with GPT and returns trading signals
+  // Analyzes the top 3 current headlines with the model and returns trading signals
   // with full reasoning. Used by the Market Intelligence page's "Analyze" button.
   app.get("/api/news/analyze", async (_req, res) => {
     try {
@@ -374,24 +438,24 @@ Respond in JSON only:
     }
   });
 
-  // Portfolio image scan that accepts a screenshot of any brokerage account and uses
-  // GPT-4o vision to read the positions off the screen. Returns structured holdings
-  // that the portfolio editor merges directly into the user's current list.
+  // Portfolio image scan that accepts a screenshot of any brokerage account, stores it
+  // in S3, and uses Claude vision on Bedrock to read the positions off the screen.
+  // Returns structured holdings that the portfolio editor merges into the user's list.
   app.post("/api/portfolio/extract-from-image", upload.single("image"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No image file provided" });
       }
 
-      const base64Image = req.file.buffer.toString("base64");
-      const mimeType = req.file.mimetype;
+      const imageFormat = toImageFormat(req.file.mimetype);
+      if (!imageFormat) {
+        return res.status(400).json({ message: "Please upload a PNG, JPEG, GIF, or WebP image." });
+      }
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [
-          {
-            role: "system",
-            content: `You are a financial data extraction expert. Analyze the brokerage screenshot carefully and extract every visible position.
+      await saveScreenshot(getUserId(res), req.file.buffer, req.file.mimetype);
+
+      const extracted = await converseJson<{ cash?: unknown; holdings?: any[] }>({
+        system: `You are a financial data extraction expert. Analyze the brokerage screenshot carefully and extract every visible position.
 
 Return ONLY valid JSON in this exact shape, no markdown, no explanation:
 {
@@ -415,20 +479,10 @@ Rules:
 - If shares are not shown but total value is, set shares to 1 and averagePrice to the total value.
 - Omit positions you cannot read clearly rather than guessing.
 - Numbers must be plain numbers, no dollar signs or commas.`,
-          },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "Extract all portfolio positions from this screenshot:" },
-              { type: "image_url", image_url: { url: `data:${mimeType};base64,${base64Image}` } },
-            ],
-          },
-        ],
-        response_format: { type: "json_object" },
-        max_completion_tokens: 1200,
+        prompt: "Extract all portfolio positions from this screenshot:",
+        image: { bytes: req.file.buffer, format: imageFormat },
+        maxTokens: 1200,
       });
-
-      const extracted = JSON.parse(response.choices[0].message.content || "{}");
 
       // Validate and sanitize each holding before sending it back.
       const holdings = (extracted.holdings || [])
@@ -440,7 +494,7 @@ Rules:
         }))
         .filter((h: any) => h.symbol && h.averagePrice > 0);
 
-      res.json({ cash: Math.abs(parseFloat(extracted.cash) || 0), holdings });
+      res.json({ cash: Math.abs(parseFloat(String(extracted.cash)) || 0), holdings });
     } catch (error) {
       console.error("Image scan error:", error);
       res.status(500).json({ message: "Failed to read the image. Please try a clearer screenshot." });
@@ -465,17 +519,12 @@ Rules:
 Your job is to ask questions about their goals, timeline, and risk tolerance. Be conversational and concise.
 Once you have enough information, set readyForSuggestions to true in your response.`;
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-5",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...chatHistory,
-          { role: "user", content: message },
-        ],
-        max_completion_tokens: 300,
+      const aiReply = await converseText({
+        system: systemPrompt,
+        history: chatHistory as ChatTurn[],
+        prompt: message,
+        maxTokens: 300,
       });
-
-      const aiReply = response.choices[0].message.content || "";
       const totalMessages = chatHistory.length + 1;
 
       // After 4 exchanges, or if the AI signals it has enough context, show suggestions.
@@ -546,20 +595,11 @@ Requirements:
 - All amounts must add up to the total savings amount
 - Mix ETFs for diversification and individual stocks for growth potential`;
 
-      const response = await openai.chat.completions.create({
-        model: "gpt-5",
-        messages: [
-          {
-            role: "system",
-            content: "You are a professional financial advisor. Respond with valid JSON only.",
-          },
-          { role: "user", content: prompt },
-        ],
-        max_completion_tokens: 1000,
-        response_format: { type: "json_object" },
+      const suggestions = await converseJson<Record<string, unknown>>({
+        system: "You are a professional financial advisor. Respond with valid JSON only.",
+        prompt,
+        maxTokens: 1000,
       });
-
-      const suggestions = JSON.parse(response.choices[0].message.content || "{}");
       res.json(suggestions);
     } catch (error) {
       console.error("Investment suggestions error:", error);

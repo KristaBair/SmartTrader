@@ -89,7 +89,7 @@ export default function AIRecommendations({ recommendations, isLoading }: AIReco
                       {recommendation.action}
                     </Badge>
                     <div className="text-sm text-gray-600">
-                      Confidence: <span className="font-medium" data-testid={`text-confidence-${recommendation.symbol.toLowerCase()}`}>
+                      AI confidence: <span className="font-medium" data-testid={`text-confidence-${recommendation.symbol.toLowerCase()}`}>
                         {recommendation.confidence}%
                       </span>
                     </div>
@@ -103,29 +103,37 @@ export default function AIRecommendations({ recommendations, isLoading }: AIReco
                 <div className="flex items-center justify-between text-sm">
                   {recommendation.targetPrice && (
                     <span className="text-gray-600">
-                      Target Price: <span className="font-medium text-gray-900" data-testid={`text-target-price-${recommendation.symbol.toLowerCase()}`}>
-                        ${parseFloat(recommendation.targetPrice).toFixed(2)}
+                      Target (AI estimate): <span className="font-medium text-gray-900" data-testid={`text-target-price-${recommendation.symbol.toLowerCase()}`}>
+                        ${Number(recommendation.targetPrice).toFixed(2)}
                       </span>
                     </span>
                   )}
                   {recommendation.currentPrice && (
-                    <span className="text-gray-600">
-                      Current Price: <span className="font-medium text-gray-900" data-testid={`text-current-price-${recommendation.symbol.toLowerCase()}`}>
-                        ${parseFloat(recommendation.currentPrice).toFixed(2)}
+                    <span
+                      className="text-gray-600"
+                      title={recommendation.priceAsOf
+                        ? `${recommendation.priceSource ?? "Verified quote"}, as of ${new Date(recommendation.priceAsOf).toLocaleString()}`
+                        : undefined}
+                    >
+                      Price: <span className="font-medium text-gray-900" data-testid={`text-current-price-${recommendation.symbol.toLowerCase()}`}>
+                        ${Number(recommendation.currentPrice).toFixed(2)}
                       </span>
+                      {recommendation.priceFreshness && (
+                        <span className="text-xs text-gray-500"> ({recommendation.priceFreshness})</span>
+                      )}
                     </span>
                   )}
                   {recommendation.expectedReturn && (
                     <span className="text-gray-600">
-                      Expected Return: <span className="font-medium text-profit" data-testid={`text-expected-return-${recommendation.symbol.toLowerCase()}`}>
-                        +{parseFloat(recommendation.expectedReturn).toFixed(1)}%
+                      Expected return (AI estimate): <span className="font-medium text-profit" data-testid={`text-expected-return-${recommendation.symbol.toLowerCase()}`}>
+                        +{Number(recommendation.expectedReturn).toFixed(1)}%
                       </span>
                     </span>
                   )}
                   {recommendation.recommendedAmount && (
                     <span className="text-gray-600">
                       Amount: <span className="font-medium text-gray-900" data-testid={`text-recommended-amount-${recommendation.symbol.toLowerCase()}`}>
-                        ${parseFloat(recommendation.recommendedAmount).toFixed(0)}
+                        ${Number(recommendation.recommendedAmount).toFixed(0)}
                       </span>
                     </span>
                   )}

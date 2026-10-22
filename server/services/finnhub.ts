@@ -3,6 +3,8 @@
 // so nothing else in the codebase needed to change except the import line.
 // Finnhub free tier allows 60 calls per minute, much better than Alpha Vantage's 5.
 
+import { classifyQuoteFreshness, type DataProvenance } from "./dataProvenance";
+
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const BASE_URL = "https://finnhub.io/api/v1";
 
@@ -27,6 +29,7 @@ export interface StockQuote {
   low: number;
   open: number;
   previousClose: number;
+  provenance: DataProvenance;
 }
 
 export interface DailyPricePoint {
@@ -48,8 +51,8 @@ export interface StockSearchResult {
 
 // ── Quote ─────────────────────────────────────────────────────────────────
 // Finnhub /quote returns: c (current), d (change), dp (% change),
-// h (high), l (low), o (open), pc (prev close). Volume isn't in /quote
-// so we default to 0 (it is only used for display purposes).
+// h (high), l (low), o (open), pc (prev close), t (last trade, unix seconds).
+// Volume isn't in /quote so we default to 0 (it is only used for display purposes).
 
 export async function getStockQuote(symbol: string): Promise<StockQuote | null> {
   try {
@@ -57,6 +60,10 @@ export async function getStockQuote(symbol: string): Promise<StockQuote | null> 
 
     // Finnhub returns c=0 when the symbol isn't found
     if (!data || data.c === 0) return null;
+
+    const now = new Date();
+    // Without a trade timestamp we can't vouch for freshness, so call it delayed.
+    const quoteTime = typeof data.t === "number" && data.t > 0 ? new Date(data.t * 1000) : null;
 
     return {
       symbol,
@@ -69,6 +76,12 @@ export async function getStockQuote(symbol: string): Promise<StockQuote | null> 
       low: data.l ?? 0,
       open: data.o ?? 0,
       previousClose: data.pc ?? 0,
+      provenance: {
+        source: "Finnhub /quote",
+        asOf: (quoteTime ?? now).toISOString(),
+        retrievedAt: now.toISOString(),
+        freshness: quoteTime ? classifyQuoteFreshness(quoteTime, now) : "delayed",
+      },
     };
   } catch (err) {
     console.error(`Finnhub quote failed for ${symbol}:`, err);
@@ -81,10 +94,25 @@ export async function getStockQuote(symbol: string): Promise<StockQuote | null> 
 // history comes from Yahoo Finance's public chart API, which needs no API key.
 // "compact" = ~6 months, "full" = ~2 years.
 
+export interface PriceHistory {
+  points: DailyPricePoint[];
+  // asOf is the date of the latest bar; null when no data came back.
+  provenance: DataProvenance | null;
+}
+
 export async function getHistoricalPrices(
   symbol: string,
   outputsize: "compact" | "full" = "compact"
 ): Promise<DailyPricePoint[]> {
+  return (await getPriceHistory(symbol, outputsize)).points;
+}
+
+// Same data as getHistoricalPrices, plus where and when it came from.
+export async function getPriceHistory(
+  symbol: string,
+  outputsize: "compact" | "full" = "compact"
+): Promise<PriceHistory> {
+  const none: PriceHistory = { points: [], provenance: null };
   try {
     const range = outputsize === "compact" ? "6mo" : "2y";
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
@@ -94,19 +122,19 @@ export async function getHistoricalPrices(
     const res = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0" },
     });
-    if (!res.ok) return [];
+    if (!res.ok) return none;
 
     const data = await res.json();
     const result = data?.chart?.result?.[0];
     const timestamps: number[] | undefined = result?.timestamp;
     const quote = result?.indicators?.quote?.[0];
 
-    if (!Array.isArray(timestamps) || !quote) return [];
+    if (!Array.isArray(timestamps) || !quote) return none;
 
     // Yahoo returns parallel arrays; some entries can be null on non-trading
     // gaps. Keep only rows with a valid close, then coerce the remaining
     // optional fields so every returned point matches DailyPricePoint exactly.
-    return timestamps
+    const points: DailyPricePoint[] = timestamps
       .map((timestamp: number, i: number) => ({
         date: new Date(timestamp * 1000).toISOString().split("T")[0],
         open: quote.open?.[i],
@@ -124,9 +152,21 @@ export async function getHistoricalPrices(
         close: p.close,
         volume: typeof p.volume === "number" ? p.volume : 0,
       }));
+
+    if (points.length === 0) return none;
+    return {
+      points,
+      provenance: {
+        // Split-adjusted closes, not dividend-adjusted.
+        source: "Yahoo Finance chart API (daily closes)",
+        asOf: points[points.length - 1].date,
+        retrievedAt: new Date().toISOString(),
+        freshness: "historical",
+      },
+    };
   } catch (err) {
     console.error(`Yahoo history failed for ${symbol}:`, err);
-    return [];
+    return none;
   }
 }
 

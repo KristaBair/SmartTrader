@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
-import { getPortfolio } from "@/lib/localStore";
+import { getPortfolio } from "@/lib/userData";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,8 @@ interface QuantReport {
   scores: RecommendationScore[];
   allocationTargets: { name: string; ticker: string; targetPct: number; currentPct: number; deviation: number }[];
   assumptions: { label: string; value: string }[];
+  dataSources: { symbol: string; source: string; asOf: string; retrievedAt: string; freshness: string; observations: number }[];
+  excludedHoldings: { symbol: string; reason: string }[];
 }
 
 // -- Helper formatters --────
@@ -92,7 +94,7 @@ export default function Analytics() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  // Pre-populate holdings from localStorage if the user went through onboarding
+  // Pre-populate holdings from the saved portfolio if the user has one
   const savedPortfolio = getPortfolio();
   const [holdings, setHoldings] = useState<Holding[]>(
     savedPortfolio?.investments?.map(inv => ({ symbol: inv.symbol, shares: inv.shares })) ?? [
@@ -295,6 +297,19 @@ export default function Analytics() {
 
             {/* ── Tab 1: Summary ─────────────────────────────────────────── */}
             <TabsContent value="summary" className="space-y-6">
+              {/* Holdings we couldn't get real data for are left out, never estimated */}
+              {report.excludedHoldings.length > 0 && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-4 text-sm text-amber-900">
+                  <p className="font-semibold flex items-center gap-2 mb-1">
+                    <AlertTriangle className="h-4 w-4" /> Left out of this analysis (no reliable data)
+                  </p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {report.excludedHoldings.map(e => (
+                      <li key={e.symbol}><strong>{e.symbol}</strong>: {e.reason}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <KpiCard
                   label="Portfolio Value"
@@ -726,6 +741,35 @@ export default function Analytics() {
                       <p className="text-gray-700 leading-relaxed text-sm">{section.body}</p>
                     </div>
                   ))}
+
+                  {/* Data sources table */}
+                  <div className="bg-white rounded-lg p-5 border border-gray-200">
+                    <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+                      <Info className="h-4 w-4" /> Data Sources
+                    </h3>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="text-left py-1 text-gray-600">Ticker</th>
+                          <th className="text-left py-1 text-gray-600">Source</th>
+                          <th className="text-left py-1 text-gray-600">Latest bar</th>
+                          <th className="text-left py-1 text-gray-600">Days</th>
+                          <th className="text-left py-1 text-gray-600">Retrieved</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report.dataSources.map(d => (
+                          <tr key={d.symbol} className="border-b border-gray-100">
+                            <td className="py-1.5 font-medium">{d.symbol}</td>
+                            <td className="py-1.5">{d.source}</td>
+                            <td className="py-1.5">{d.asOf} <span className="text-gray-500">({d.freshness})</span></td>
+                            <td className="py-1.5">{d.observations}</td>
+                            <td className="py-1.5">{new Date(d.retrievedAt).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
 
                   {/* Assumptions table */}
                   <div className="bg-indigo-50 rounded-lg p-5 border border-indigo-200">

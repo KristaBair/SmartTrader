@@ -7,7 +7,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UserProvider, useUser } from "@/context/UserContext";
-import { getOnboarding } from "@/lib/localStore";
+import { getOnboarding } from "@/lib/userData";
 import { useSignalPolling } from "@/hooks/useSignalPolling";
 import TradingAlerts from "@/components/TradingAlerts";
 import SignIn from "@/pages/sign-in";
@@ -20,11 +20,20 @@ import Analytics from "@/pages/analytics";
 import NotFound from "@/pages/not-found";
 
 function Router() {
-  const { user, isSignedIn } = useUser();
+  const { isSignedIn, isLoading } = useUser();
 
   // Only poll for signals when someone is actually signed in. No point hitting
   // the API on the sign-in screen
   const { newSignals } = useSignalPolling(isSignedIn);
+
+  // Wait for the stored Cognito session check before deciding what to show
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center">
+        <p className="text-slate-300 text-sm">Loading your account...</p>
+      </div>
+    );
+  }
 
   // If no one is signed in, the whole app collapses to the sign-in screen
   if (!isSignedIn) {
@@ -32,7 +41,7 @@ function Router() {
   }
 
   // Check if this user has finished the one-time setup flow
-  const onboarding = getOnboarding(user!.id);
+  const onboarding = getOnboarding();
   const hasOnboarded = onboarding?.completed === true;
 
   return (

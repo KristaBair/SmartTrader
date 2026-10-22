@@ -1,10 +1,10 @@
-// All GPT calls that produce investment analysis live here.
-// Each function has one job: build a prompt, call the API, and return a typed result.
+// All Bedrock calls that produce investment analysis live here.
+// Each function has one job: build a prompt, call the model, and return a typed result.
 
-import OpenAI from "openai";
 import { type RiskTolerance, type Timeline } from "@shared/schema";
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+import { converseJson } from "./bedrock";
+import { getMultipleQuotes } from "./finnhub";
+import { applyVerifiedPrices, formatQuotesForPrompt, type QuoteMap } from "./verifiedPrices";
 
 // ── Portfolio analysis ──────────────────────────────────────────────────────
 
@@ -18,6 +18,9 @@ export interface InvestmentRecommendation {
   currentPrice?: number;
   expectedReturn?: number;
   recommendedAmount?: number;
+  priceSource?: string;
+  priceAsOf?: string;
+  priceFreshness?: string;
 }
 
 export interface PortfolioAnalysis {
@@ -31,21 +34,37 @@ export interface PortfolioAnalysis {
   riskAlert?: string;
 }
 
-// Takes the user's cash, holdings, risk profile, and timeline and asks GPT
-// for 3 to 5 ranked buy/sell recommendations with reasoning.
+// Takes the user's cash, holdings, risk profile, and timeline and asks the model
+// for 3 to 5 ranked buy/sell recommendations with reasoning. The model is given
+// verified quotes for the holdings, and every currentPrice in the result is
+// replaced with a verified quote (or removed), so no price comes from the model.
 export async function analyzePortfolio(
   cash: number,
   investments: string,
   riskTolerance: RiskTolerance,
-  timeline: Timeline
+  timeline: Timeline,
+  heldSymbols: string[] = []
 ): Promise<PortfolioAnalysis> {
+  const quotes: QuoteMap = heldSymbols.length > 0
+    ? await getMultipleQuotes(heldSymbols.map((s) => s.toUpperCase()))
+    : {};
+
   const prompt = `Analyze this investment portfolio and return recommendations in JSON.
 
 Portfolio:
 - Cash available: $${cash}
-- Current holdings: ${investments}
+- Current holdings (symbol: average cost per share): ${investments}
 - Risk tolerance: ${riskTolerance}
 - Timeline: ${timeline}
+
+Verified market data (the only current prices you may rely on):
+${formatQuotesForPrompt(quotes)}
+
+Data rules:
+- Do not state a current price, earnings figure, or other market fact that is not in the verified data above. Omit "currentPrice" for any ticker not listed.
+- "targetPrice" and "expectedReturn" are your own estimates. Include them only if your reasoning justifies them; otherwise omit them.
+- "confidence" is your subjective confidence in the reasoning, not a statistical probability of profit.
+- If the data is not enough to support a recommendation, say so in the reasoning.
 
 Return this exact JSON shape:
 {
@@ -73,28 +92,25 @@ Return this exact JSON shape:
 
 Give 3 to 5 specific, actionable recommendations. Consider the user's risk tolerance and timeline.`;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-5",
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are an expert financial advisor. Provide actionable recommendations based on the user's portfolio. Always respond with valid JSON.",
-      },
-      { role: "user", content: prompt },
-    ],
-    response_format: { type: "json_object" },
+  const analysis = await converseJson<PortfolioAnalysis>({
+    system:
+      "You are an expert financial advisor. Provide actionable recommendations based on the user's portfolio. Always respond with valid JSON.",
+    prompt,
+    maxTokens: 2000,
   });
-
-  const content = response.choices[0].message.content;
-  if (!content) throw new Error("No response from OpenAI");
-
-  const analysis: PortfolioAnalysis = JSON.parse(content);
   if (!analysis.recommendations || !Array.isArray(analysis.recommendations)) {
     throw new Error("AI returned an invalid portfolio analysis structure");
   }
 
-  return analysis;
+  // Look up anything the model recommended that we haven't quoted yet.
+  const missing = analysis.recommendations
+    .map((r) => String(r.symbol ?? "").toUpperCase())
+    .filter((sym) => sym && !(sym in quotes));
+  const allQuotes = missing.length > 0
+    ? { ...quotes, ...(await getMultipleQuotes(Array.from(new Set(missing)))) }
+    : quotes;
+
+  return { ...analysis, recommendations: applyVerifiedPrices(analysis.recommendations, allQuotes) };
 }
 
 // ── Smart Invest ────────────────────────────────────────────────────────────
@@ -151,18 +167,11 @@ Rules:
 - Include 3 to 6 investments with real ticker symbols
 - Match the risk profile: conservative leans toward bonds and ETFs, aggressive leans toward growth stocks`;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-5",
-    messages: [
-      { role: "system", content: "You are an expert financial advisor. Respond with valid JSON only." },
-      { role: "user", content: prompt },
-    ],
-    response_format: { type: "json_object" },
+  return converseJson<InvestPlan>({
+    system: "You are an expert financial advisor. Respond with valid JSON only.",
+    prompt,
+    maxTokens: 2000,
   });
-
-  const content = response.choices[0].message.content;
-  if (!content) throw new Error("No response from AI");
-  return JSON.parse(content);
 }
 
 // ── Pattern Analyzer ────────────────────────────────────────────────────────
@@ -191,7 +200,7 @@ export interface PatternAnalysis {
 }
 
 // Takes the biggest price moves for a stock along with surrounding news headlines,
-// then asks GPT to identify recurring patterns and explain them in plain English.
+// then asks the model to identify recurring patterns and explain them in plain English.
 export async function analyzeStockPatterns(
   ticker: string,
   companyName: string,
@@ -231,20 +240,9 @@ Return this exact JSON:
   "whatToWatchFor": "What kinds of news or events should investors track?"
 }`;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-5",
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are a stock pattern analyst. Explain patterns clearly and return valid JSON only.",
-      },
-      { role: "user", content: prompt },
-    ],
-    response_format: { type: "json_object" },
+  return converseJson<PatternAnalysis>({
+    system: "You are a stock pattern analyst. Explain patterns clearly and return valid JSON only.",
+    prompt,
+    maxTokens: 2000,
   });
-
-  const content = response.choices[0].message.content;
-  if (!content) throw new Error("No response from AI");
-  return JSON.parse(content);
 }

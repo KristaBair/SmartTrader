@@ -45,6 +45,12 @@ shared/    Drizzle schema and shared TypeScript types
 The app runs through the preconfigured **Start application** workflow, which runs
 `npm run dev` to start the Express server and Vite dev server together.
 
+### Using Claude Code
+
+Claude Code is a terminal-based coding assistant. From the project directory,
+run `~/.local/bin/claude`, then follow its prompts to sign in with a Claude
+account. The project-specific guidance is in `CLAUDE.md`.
+
 ### Environment variables
 
 These are managed as Replit Secrets:

@@ -72,11 +72,21 @@ export const savedOnboardingSchema = z.object({
 
 export type SavedOnboarding = z.infer<typeof savedOnboardingSchema>;
 
+// ── Terms and Conditions acceptance ────────────────────────────────────────
+
+export const termsAcceptanceSchema = z.object({
+  version: z.string(),
+  acceptedAt: z.string(),
+});
+
+export type TermsAcceptance = z.infer<typeof termsAcceptanceSchema>;
+
 // Everything the client loads for the signed-in user in one request.
 export interface UserData {
   portfolio: SavedPortfolio | null;
   onboarding: SavedOnboarding | null;
   recommendations: Recommendation[];
+  termsAcceptance: TermsAcceptance | null;
 }
 
 // Additional types for frontend

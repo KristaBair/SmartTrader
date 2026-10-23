@@ -22,7 +22,6 @@ export default function Dashboard() {
   const [, navigate] = useLocation();
   const { user, signOut } = useUser();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [includeLinkedInvestments, setIncludeLinkedInvestments] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   // Pre-load the saved portfolio so the form isn't blank on return visits
@@ -62,7 +61,6 @@ export default function Dashboard() {
         symbols: current.investments.map((i) => i.symbol),
         riskTolerance: current.riskTolerance,
         timeline: current.timeline,
-        includeLinkedInvestments,
       });
       const result = await response.json();
 
@@ -71,7 +69,14 @@ export default function Dashboard() {
         saveRecommendations(result.recommendations);
       }
 
-      toast({ title: "Analysis complete", description: "Your portfolio has been analyzed." });
+      // Linked-account problems don't block the analysis, but the user should know.
+      const linkedDataNotices: string[] = Array.isArray(result.linkedDataNotices) ? result.linkedDataNotices : [];
+      toast({
+        title: "Analysis complete",
+        description: linkedDataNotices.length > 0
+          ? linkedDataNotices.join(" ")
+          : "Your portfolio has been analyzed.",
+      });
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : "";
       const serverMessage = rawMessage.match(/"message"\s*:\s*"([^"]+)"/)?.[1];
@@ -253,9 +258,7 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1 space-y-4">
-            <PlaidAccountsPanel
-              onIncludeLinkedInvestmentsChange={setIncludeLinkedInvestments}
-            />
+            <PlaidAccountsPanel />
             <SpendingAnalysisPanel />
             <PortfolioInput
               portfolio={portfolio as SavedPortfolio}

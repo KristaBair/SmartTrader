@@ -2,7 +2,7 @@
 // Everything except /api/auth/config requires a Cognito access token. User data
 // (portfolio, onboarding, recommendations) is stored in DynamoDB per Cognito user.
 
-import type { Express } from "express";
+import type { Express, RequestHandler } from "express";
 import { createServer, type Server } from "http";
 import { storage, type StoredPlaidItem } from "./storage";
 import { requireAuth, getUserId, getAuthClientConfig } from "./auth";
@@ -33,7 +33,11 @@ import {
   getPlaidErrorDetails,
   getPlaidSetupStatus,
 } from "./services/plaid";
-import { calculateSpendingAnalysis } from "./services/spendingAnalysis";
+import {
+  calculateSpendingAnalysis,
+  type SpendingAnalysisSummary,
+} from "./services/spendingAnalysis";
+import { TERMS_VERSION } from "@shared/terms";
 
 interface TradingSignal {
   ticker: string;
@@ -290,6 +294,116 @@ async function getPlaidAnalysisContext(userId: string): Promise<{
   };
 }
 
+class SpendingAnalysisError extends Error {
+  constructor(public status: number, public code: string, message: string) {
+    super(message);
+  }
+}
+
+// Pulls 90 days of transactions from every bank connection and reduces them to a
+// cash-flow summary. Raw transactions never leave this function.
+async function loadSpendingAnalysis(userId: string): Promise<{
+  analysis: SpendingAnalysisSummary;
+  excludedCurrencyCount: number;
+}> {
+  const items = (await storage.getPlaidItems(userId)).filter((item) =>
+    (item.products || []).includes("transactions")
+  );
+  if (items.length === 0) {
+    throw new SpendingAnalysisError(
+      409,
+      "NO_SPENDING_ACCOUNTS",
+      "Connect a checking or savings account with the spending connection button first."
+    );
+  }
+
+  const client = createPlaidClient();
+  const periodEnd = new Date().toISOString().slice(0, 10);
+  const endTime = Date.parse(`${periodEnd}T00:00:00.000Z`);
+  const periodStart = new Date(endTime - 89 * 86_400_000).toISOString().slice(0, 10);
+  const transactions: Array<{
+    amount: number;
+    category: string;
+    primaryCategory: string;
+    pending: boolean;
+  }> = [];
+  let excludedCurrencyCount = 0;
+  const maxTransactionsPerItem = 5_000;
+
+  for (const item of items) {
+    const accessToken = decryptPlaidAccessToken(
+      item.encryptedAccessToken,
+      `${userId}:${item.itemId}`
+    );
+    let offset = 0;
+    let totalTransactions = Number.POSITIVE_INFINITY;
+    while (offset < totalTransactions && offset < maxTransactionsPerItem) {
+      const response = await client.transactionsGet({
+        access_token: accessToken,
+        start_date: periodStart,
+        end_date: periodEnd,
+        options: { count: 500, offset },
+      });
+      totalTransactions = response.data.total_transactions;
+      for (const transaction of response.data.transactions) {
+        if (transaction.iso_currency_code !== "USD") {
+          excludedCurrencyCount += 1;
+          continue;
+        }
+        const primaryCategory =
+          transaction.personal_finance_category?.primary
+          || transaction.category?.[0]
+          || "OTHER";
+        transactions.push({
+          amount: transaction.amount,
+          category:
+            transaction.personal_finance_category?.detailed
+            || primaryCategory,
+          primaryCategory,
+          pending: transaction.pending,
+        });
+      }
+      const received = response.data.transactions.length;
+      if (received === 0) break;
+      offset += received;
+    }
+
+    if (offset < totalTransactions) {
+      throw new SpendingAnalysisError(
+        422,
+        "SPENDING_TRANSACTION_LIMIT",
+        "Too many transactions were returned for one account. Narrow the connected accounts and try again."
+      );
+    }
+    await storage.savePlaidItem(userId, { ...item, lastSyncedAt: new Date().toISOString() });
+  }
+
+  const analysis = calculateSpendingAnalysis(transactions, periodStart, periodEnd);
+  if (analysis.transactionsAnalyzed === 0) {
+    throw new SpendingAnalysisError(
+      422,
+      "NO_COMPLETED_TRANSACTIONS",
+      "There are no completed USD transactions to analyze in the last 90 days."
+    );
+  }
+
+  return { analysis, excludedCurrencyCount };
+}
+
+function formatSpendingForPrompt(analysis: SpendingAnalysisSummary): string {
+  const categories = analysis.categories
+    .map((category) => `  - ${category.category}: $${category.monthlyAverage.toFixed(2)}/month`)
+    .join("\n");
+  return [
+    `- Period: ${analysis.periodStart} to ${analysis.periodEnd} (${analysis.transactionsAnalyzed} completed USD transactions, transfers excluded)`,
+    `- Average monthly income: $${analysis.monthlyIncome.toFixed(2)}`,
+    `- Average monthly expenses: $${analysis.monthlyExpenses.toFixed(2)}`,
+    `- Average monthly surplus: $${analysis.monthlySurplus.toFixed(2)}`,
+    `- Suggested monthly contribution (50% of positive surplus): $${analysis.suggestedMonthlyContribution.toFixed(2)}`,
+    ...(categories ? [`- Top spending categories:\n${categories}`] : []),
+  ].join("\n");
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Multer holds the upload in memory; the route then stores it in S3 and passes
   // the same bytes to Bedrock, so nothing is written to local disk.
@@ -309,6 +423,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Every route registered below this line requires a valid Cognito access token.
   app.use("/api", requireAuth);
+
+  // Connected-account data and the analysis that uses it are only available to
+  // users who have accepted the current Terms, which is where that sharing is disclosed.
+  const requireCurrentTerms: RequestHandler = async (_req, res, next) => {
+    try {
+      const acceptance = await storage.getTermsAcceptance(getUserId(res));
+      if (acceptance?.version !== TERMS_VERSION) {
+        return res.status(403).json({
+          code: "TERMS_NOT_ACCEPTED",
+          message: "Accept the current Terms and Conditions to continue.",
+        });
+      }
+      next();
+    } catch (error) {
+      console.error("Terms check error:", error);
+      res.status(500).json({ message: "Could not verify Terms acceptance" });
+    }
+  };
+  app.use(["/api/plaid", "/api/spending", "/api/portfolios/analyze-direct"], requireCurrentTerms);
+
+  app.put("/api/me/terms", async (req, res) => {
+    const body = z.object({ version: z.literal(TERMS_VERSION) }).safeParse(req.body);
+    if (!body.success) {
+      return res.status(400).json({ message: "These Terms are out of date. Reload the page and review the current version." });
+    }
+    try {
+      const acceptance = { version: TERMS_VERSION, acceptedAt: new Date().toISOString() };
+      await storage.saveTermsAcceptance(getUserId(res), acceptance);
+      res.json(acceptance);
+    } catch (error) {
+      console.error("Save terms acceptance error:", error);
+      res.status(500).json({ message: "Failed to record your acceptance" });
+    }
+  });
 
   app.get("/api/plaid/status", (_req, res) => {
     res.json(getPlaidSetupStatus());
@@ -479,83 +627,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const userId = getUserId(res);
-      const items = (await storage.getPlaidItems(userId)).filter((item) =>
-        (item.products || []).includes("transactions")
-      );
-      if (items.length === 0) {
-        return res.status(409).json({
-          code: "NO_SPENDING_ACCOUNTS",
-          message: "Connect a checking or savings account with the spending connection button first.",
-        });
-      }
-
-      const client = createPlaidClient();
-      const periodEnd = new Date().toISOString().slice(0, 10);
-      const endTime = Date.parse(`${periodEnd}T00:00:00.000Z`);
-      const periodStart = new Date(endTime - 89 * 86_400_000).toISOString().slice(0, 10);
-      const transactions: Array<{
-        amount: number;
-        category: string;
-        primaryCategory: string;
-        pending: boolean;
-      }> = [];
-      let excludedCurrencyCount = 0;
-      const maxTransactionsPerItem = 5_000;
-
-      for (const item of items) {
-        const accessToken = decryptPlaidAccessToken(
-          item.encryptedAccessToken,
-          `${userId}:${item.itemId}`
-        );
-        let offset = 0;
-        let totalTransactions = Number.POSITIVE_INFINITY;
-        while (offset < totalTransactions && offset < maxTransactionsPerItem) {
-          const response = await client.transactionsGet({
-            access_token: accessToken,
-            start_date: periodStart,
-            end_date: periodEnd,
-            options: { count: 500, offset },
-          });
-          totalTransactions = response.data.total_transactions;
-          for (const transaction of response.data.transactions) {
-            if (transaction.iso_currency_code !== "USD") {
-              excludedCurrencyCount += 1;
-              continue;
-            }
-            const primaryCategory =
-              transaction.personal_finance_category?.primary
-              || transaction.category?.[0]
-              || "OTHER";
-            transactions.push({
-              amount: transaction.amount,
-              category:
-                transaction.personal_finance_category?.detailed
-                || primaryCategory,
-              primaryCategory,
-              pending: transaction.pending,
-            });
-          }
-          const received = response.data.transactions.length;
-          if (received === 0) break;
-          offset += received;
-        }
-
-        if (offset < totalTransactions) {
-          return res.status(422).json({
-            code: "SPENDING_TRANSACTION_LIMIT",
-            message: "Too many transactions were returned for one account. Narrow the connected accounts and try again.",
-          });
-        }
-        await storage.savePlaidItem(userId, { ...item, lastSyncedAt: new Date().toISOString() });
-      }
-
-      const analysis = calculateSpendingAnalysis(transactions, periodStart, periodEnd);
-      if (analysis.transactionsAnalyzed === 0) {
-        return res.status(422).json({
-          code: "NO_COMPLETED_TRANSACTIONS",
-          message: "There are no completed USD transactions to analyze in the last 90 days.",
-        });
-      }
+      const { analysis, excludedCurrencyCount } = await loadSpendingAnalysis(userId);
 
       res.json({
         ...analysis,
@@ -565,13 +637,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         notices: [
           "This estimate uses the last 90 days of completed USD transactions. Pending transactions and transfers are excluded to reduce double-counting.",
           "The suggested starting contribution is 50% of positive recent cash-flow surplus. It is an estimate, not financial advice, and does not account for unlinked accounts, upcoming bills, debt, or savings goals.",
-          "This report is calculated on the server. Raw transactions and merchant names are not stored in InvestSmart or sent to Amazon Bedrock.",
+          "This report is calculated on the server. Raw transactions and merchant names are not stored in InvestSmart or sent to Amazon Bedrock; under the Terms, only this summary is included in AI portfolio analysis.",
           ...(excludedCurrencyCount > 0
             ? [`${excludedCurrencyCount} non-USD or unclassified-currency transactions were excluded because no currency conversion is applied.`]
             : []),
         ],
       });
     } catch (error) {
+      if (error instanceof SpendingAnalysisError) {
+        return res.status(error.status).json({ code: error.code, message: error.message });
+      }
       logPlaidFailure("spending-analysis", error);
       res.status(502).json({
         message: "Could not retrieve all connected spending transactions. Reconnect the bank account and try again.",
@@ -683,18 +758,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const heldSymbols = Array.isArray(symbols)
         ? symbols.filter((s: unknown): s is string => typeof s === "string" && /^[A-Za-z.\-]{1,12}$/.test(s)).slice(0, 50)
         : [];
+      // Connected-account data is included whenever it exists; users agree to this
+      // in the Terms. A failed connection is reported but does not block the analysis.
       let linkedInvestmentSummary: string | undefined;
       let linkedSymbols: string[] = [];
-      if (req.body?.includeLinkedInvestments === true) {
+      let spendingSummary: string | undefined;
+      const linkedDataNotices: string[] = [];
+      const userId = getUserId(res);
+      const plaidStatus = getPlaidSetupStatus();
+      const plaidItems = plaidStatus.configured ? await storage.getPlaidItems(userId) : [];
+      const hasProduct = (product: string) => plaidItems.some((item) =>
+        (item.products?.length ? item.products : ["investments"]).includes(product)
+      );
+
+      if (hasProduct("investments")) {
         try {
-          const linkedContext = await getPlaidAnalysisContext(getUserId(res));
+          const linkedContext = await getPlaidAnalysisContext(userId);
           linkedInvestmentSummary = linkedContext.summary;
           linkedSymbols = linkedContext.symbols;
         } catch (error) {
           logPlaidFailure("analysis-context", error);
-          return res.status(503).json({
-            message: "Could not load linked investment data. Reconnect the account or turn off linked-account sharing.",
-          });
+          linkedDataNotices.push("Linked investment holdings could not be loaded, so they were left out. Reconnect the account and try again.");
+        }
+      }
+      if (hasProduct("transactions") && plaidStatus.products.includes("transactions")) {
+        try {
+          const { analysis } = await loadSpendingAnalysis(userId);
+          spendingSummary = formatSpendingForPrompt(analysis);
+        } catch (error) {
+          if (!(error instanceof SpendingAnalysisError)) logPlaidFailure("analysis-spending", error);
+          linkedDataNotices.push("Bank spending data could not be summarized, so it was left out.");
         }
       }
       const analysis = await analyzePortfolio(
@@ -703,9 +796,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         (riskTolerance || "moderate") as any,
         (timeline || "long_term") as any,
         Array.from(new Set([...heldSymbols, ...linkedSymbols])),
-        linkedInvestmentSummary
+        linkedInvestmentSummary,
+        spendingSummary
       );
-      res.json(analysis);
+      res.json({ ...analysis, linkedDataNotices });
     } catch (error) {
       console.error("Direct analysis error:", error);
       res.status(500).json({ message: "Analysis failed" });

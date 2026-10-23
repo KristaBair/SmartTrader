@@ -101,7 +101,7 @@ export default function SpendingAnalysisPanel() {
         <div className="flex items-start gap-2 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-xs leading-5 text-emerald-950">
           <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            Uses the last 90 days of completed USD transactions. Transfers and pending items are excluded. The report is calculated on the server; raw transactions and merchant names are not stored or sent to Amazon Bedrock.
+            Uses the last 90 days of completed USD transactions. Transfers and pending items are excluded. The report is calculated on the server; raw transactions and merchant names are not stored or sent to Amazon Bedrock. Only this summary is included in AI portfolio analysis, as described in the Terms.
           </p>
         </div>
 

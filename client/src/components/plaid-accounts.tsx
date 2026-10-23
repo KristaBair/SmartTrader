@@ -70,40 +70,6 @@ interface PlaidItem {
   transactionsAvailable: boolean;
 }
 
-interface SpendingAnalysis {
-  periodStart: string;
-  periodEnd: string;
-  transactionsAnalyzed: number;
-  monthlyIncome: number;
-  monthlyExpenses: number;
-  monthlySurplus: number;
-  suggestedMonthlyContribution: number;
-  categories: Array<{
-    category: string;
-    monthlyAverage: number;
-    cutbackOptions: Array<{
-      cutPercent: number;
-      monthlySavings: number;
-      suggestedContributionAfterCut: number;
-    }>;
-  }>;
-  excludedCurrencyCount: number;
-  notices: string[];
-}
-
-function formatCategory(category: string) {
-  return category
-    .toLowerCase()
-    .split("_")
-    .filter(Boolean)
-    .map((word) => word[0].toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
-interface PlaidAccountsPanelProps {
-  onIncludeLinkedInvestmentsChange: (include: boolean) => void;
-}
-
 function formatMoney(value: number | null, currency: string | null = "USD") {
   if (value === null || !Number.isFinite(value)) return "Not provided";
   const safeCurrency = currency && /^[A-Z]{3}$/.test(currency) ? currency : "USD";
@@ -118,9 +84,7 @@ function formatMoney(value: number | null, currency: string | null = "USD") {
   }
 }
 
-export default function PlaidAccountsPanel({
-  onIncludeLinkedInvestmentsChange,
-}: PlaidAccountsPanelProps) {
+export default function PlaidAccountsPanel() {
   const { toast } = useToast();
   const [status, setStatus] = useState<PlaidStatus | null>(null);
   const [items, setItems] = useState<PlaidItem[]>([]);
@@ -128,13 +92,10 @@ export default function PlaidAccountsPanel({
   const [isLoading, setIsLoading] = useState(true);
   const [isBusy, setIsBusy] = useState(false);
   const [disconnectingItemId, setDisconnectingItemId] = useState<string | null>(null);
-  const [includeInAnalysis, setIncludeInAnalysis] = useState(false);
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [pendingOpen, setPendingOpen] = useState(false);
   const [reconnectingItemId, setReconnectingItemId] = useState<string | null>(null);
   const [linkPurpose, setLinkPurpose] = useState<"investments" | "spending">("investments");
-  const [spending, setSpending] = useState<SpendingAnalysis | null>(null);
-  const [isAnalyzingSpending, setIsAnalyzingSpending] = useState(false);
 
   const refreshAccounts = useCallback(async (showToast = false) => {
     setIsLoading(true);
@@ -171,18 +132,6 @@ export default function PlaidAccountsPanel({
   useEffect(() => {
     void refreshAccounts();
   }, [refreshAccounts]);
-
-  useEffect(() => {
-    const canInclude = Boolean(
-      status?.configured && items.some((item) =>
-        item.status === "connected" && item.products.includes("investments")
-      )
-    );
-    if (!canInclude && includeInAnalysis) {
-      setIncludeInAnalysis(false);
-      onIncludeLinkedInvestmentsChange(false);
-    }
-  }, [includeInAnalysis, items, onIncludeLinkedInvestmentsChange, status]);
 
   const handleLinkSuccess = useCallback(async (
     publicToken: string | null,
@@ -299,34 +248,7 @@ export default function PlaidAccountsPanel({
     }
   };
 
-  const analyzeSpending = async () => {
-    setIsAnalyzingSpending(true);
-    try {
-      const response = await apiRequest("POST", "/api/spending/analyze");
-      setSpending(await response.json() as SpendingAnalysis);
-    } catch (error) {
-      const rawMessage = error instanceof Error ? error.message : "";
-      const serverMessage = rawMessage.match(/"message"\s*:\s*"([^"]+)"/)?.[1];
-      toast({
-        title: "Spending analysis failed",
-        description: serverMessage || "Try again later.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsAnalyzingSpending(false);
-    }
-  };
-
-  const canInclude = Boolean(
-    status?.configured && items.some((item) =>
-      item.status === "connected" && item.products.includes("investments")
-    )
-  );
-  const hasSpendingAccount = Boolean(
-    status?.products.includes("transactions") && items.some((item) =>
-      item.status === "connected" && item.products.includes("transactions")
-    )
-  );
+  const hasConnectedItem = items.some((item) => item.status === "connected");
 
   return (
     <Card>
@@ -558,102 +480,19 @@ export default function PlaidAccountsPanel({
           </section>
         ))}
 
-        {hasSpendingAccount && (
-          <div className="space-y-3 rounded-lg border border-gray-200 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-gray-900">Spending and investable cash</h3>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void analyzeSpending()}
-                disabled={isAnalyzingSpending}
-              >
-                {isAnalyzingSpending && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
-                {spending ? "Recalculate" : "Analyze last 90 days"}
-              </Button>
-            </div>
-
-            {spending && (
-              <>
-                <dl className="grid grid-cols-2 gap-2 text-sm">
-                  {([
-                    ["Monthly income", spending.monthlyIncome],
-                    ["Monthly expenses", spending.monthlyExpenses],
-                    ["Monthly surplus", spending.monthlySurplus],
-                    ["Suggested contribution", spending.suggestedMonthlyContribution],
-                  ] as const).map(([label, value]) => (
-                    <div key={label} className="rounded-md bg-gray-50 px-3 py-2">
-                      <dt className="text-xs text-gray-500">{label}</dt>
-                      <dd className="font-medium text-gray-900">{formatMoney(value)}</dd>
-                    </div>
-                  ))}
-                </dl>
-
-                {spending.categories.length > 0 && (
-                  <div>
-                    <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      Top spending categories
-                    </h4>
-                    <div className="space-y-2">
-                      {spending.categories.map((category) => {
-                        const cut = category.cutbackOptions.find((option) => option.cutPercent === 20);
-                        return (
-                          <div key={category.category} className="border-b border-gray-100 pb-2 text-sm last:border-0">
-                            <div className="flex justify-between gap-3">
-                              <span className="truncate text-gray-800">{formatCategory(category.category)}</span>
-                              <span className="shrink-0 font-medium text-gray-900">
-                                {formatMoney(category.monthlyAverage)}/mo
-                              </span>
-                            </div>
-                            {cut && (
-                              <p className="text-xs text-gray-500">
-                                Cutting 20% frees {formatMoney(cut.monthlySavings)}/mo; suggested contribution becomes {formatMoney(cut.suggestedContributionAfterCut)}/mo
-                              </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                <p className="text-xs text-gray-500">
-                  {spending.transactionsAnalyzed} transactions from {spending.periodStart} to {spending.periodEnd}
-                  {spending.excludedCurrencyCount > 0
-                    ? ` · ${spending.excludedCurrencyCount} non-USD transactions excluded`
-                    : ""}
-                </p>
-                <ul className="list-disc space-y-1 pl-4 text-xs leading-5 text-gray-500">
-                  {spending.notices.map((notice) => <li key={notice}>{notice}</li>)}
-                </ul>
-              </>
-            )}
-          </div>
-        )}
-
-        {canInclude && (
-          <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
-            <label className="flex cursor-pointer items-start gap-2">
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4 accent-indigo-600"
-                checked={includeInAnalysis}
-                onChange={(event) => {
-                  const checked = event.target.checked;
-                  setIncludeInAnalysis(checked);
-                  onIncludeLinkedInvestmentsChange(checked);
-                }}
-              />
-              <span>
-                <span className="block text-sm font-medium text-indigo-950">
-                  Include linked holdings in AI analysis
-                </span>
-                <span className="mt-1 block text-xs leading-5 text-indigo-900">
-                  When selected, ticker symbols, share counts, and institution-reported holding values are sent to Claude on Amazon Bedrock for this analysis. Account numbers and Plaid credentials are not sent. This choice resets when you reload the dashboard.
-                </span>
-              </span>
-            </label>
-            <p className="mt-2 flex items-center gap-1 text-xs text-indigo-800">
+        {hasConnectedItem && (
+          <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-xs leading-5 text-indigo-900">
+            <p>
+              As described in the{" "}
+              <a href="/terms#ai-sharing" target="_blank" rel="noopener noreferrer" className="font-medium underline">
+                Terms and Conditions
+              </a>
+              , AI analysis includes ticker symbols, share counts, and institution-reported values from linked
+              investment accounts, plus a cash-flow summary from linked bank accounts. Account numbers, merchant
+              names, individual transactions, and Plaid credentials are never sent. Disconnect an account to stop
+              including it.
+            </p>
+            <p className="mt-2 flex items-center gap-1 text-indigo-800">
               <ShieldCheck className="h-3.5 w-3.5" />
               Plaid access tokens stay encrypted on the server.
             </p>

@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useUser } from "@/context/UserContext";
 import { configureAuth } from "@/lib/auth";
-import { getOnboarding } from "@/lib/userData";
+import { acceptTerms, getOnboarding } from "@/lib/userData";
 import { TrendingUp, UserPlus, LogIn, MailCheck, KeyRound, ArrowLeft } from "lucide-react";
 
 type View = "sign-in" | "create-account" | "confirm" | "reset";
@@ -46,6 +46,8 @@ export default function SignIn() {
   const [lastName, setLastName] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [code, setCode] = useState("");
+  // Recorded on the server after the first sign-in, since Cognito sign-up has no session yet.
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   // Reset flow: false = ask for email, true = enter code + new password
   const [resetCodeSent, setResetCodeSent] = useState(false);
 
@@ -98,6 +100,10 @@ export default function SignIn() {
 
   function handleCreateAccount(e: FormEvent) {
     e.preventDefault();
+    if (!agreedToTerms) {
+      toast({ title: "Please accept the Terms", description: "You need to agree to the Terms and Conditions to create an account.", variant: "destructive" });
+      return;
+    }
     if (password !== confirmPassword) {
       toast({ title: "Passwords don't match", description: "Please re-enter the same password.", variant: "destructive" });
       return;
@@ -127,6 +133,10 @@ export default function SignIn() {
       if (password) {
         // We still have the password from this visit, so sign straight in.
         await signIn({ username: email.trim(), password });
+        if (agreedToTerms) {
+          // Best effort: if this fails, the acceptance screen asks again after sign-in.
+          await acceptTerms().catch(() => undefined);
+        }
         await finishSignIn();
       } else {
         toast({ title: "Email verified", description: "You can sign in now." });
@@ -292,9 +302,25 @@ export default function SignIn() {
                   className={inputClass}
                 />
               </div>
+              <label className="flex items-start gap-2 text-xs leading-5 text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  required
+                  checked={agreedToTerms}
+                  onChange={e => setAgreedToTerms(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-blue-500"
+                />
+                <span>
+                  I am at least 18 and agree to the{" "}
+                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300">
+                    Terms and Conditions
+                  </a>
+                  , including how my connected-account information is used in AI analysis.
+                </span>
+              </label>
               <Button
                 type="submit"
-                disabled={isBusy}
+                disabled={isBusy || !agreedToTerms}
                 className="w-full h-12 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl mt-2"
               >
                 {isBusy ? "Creating account..." : "Create Account"}

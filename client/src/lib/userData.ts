@@ -9,8 +9,10 @@ import type {
   Recommendation,
   SavedOnboarding,
   SavedPortfolio,
+  TermsAcceptance,
   UserData,
 } from "@shared/schema";
+import { TERMS_VERSION } from "@shared/terms";
 
 export type { SavedOnboarding, SavedPortfolio };
 
@@ -36,7 +38,12 @@ export function toPortfolioView(p: SavedPortfolio | null): PortfolioView | undef
   };
 }
 
-const empty = (): UserData => ({ portfolio: null, onboarding: null, recommendations: [] });
+const empty = (): UserData => ({
+  portfolio: null,
+  onboarding: null,
+  recommendations: [],
+  termsAcceptance: null,
+});
 
 let cache: UserData = empty();
 
@@ -68,6 +75,18 @@ export async function loadUserData(): Promise<void> {
 
 export function clearUserDataCache() {
   cache = empty();
+}
+
+// ── Terms and Conditions ───────────────────────────────────────────────────
+
+export function hasAcceptedCurrentTerms(): boolean {
+  return cache.termsAcceptance?.version === TERMS_VERSION;
+}
+
+// Not write-through: the server must record acceptance before the app unlocks.
+export async function acceptTerms(): Promise<void> {
+  const res = await apiRequest("PUT", "/api/me/terms", { version: TERMS_VERSION });
+  cache = { ...cache, termsAcceptance: (await res.json()) as TermsAcceptance };
 }
 
 // ── Onboarding ─────────────────────────────────────────────────────────────
@@ -109,6 +128,7 @@ export function saveRecommendations(data: Recommendation[]): Promise<void> {
 // Wipes portfolio, onboarding, and recommendations for the signed-in user.
 
 export function clearAll(): Promise<void> {
-  cache = empty();
+  // The server keeps the Terms acceptance through a reset, so the cache does too.
+  cache = { ...empty(), termsAcceptance: cache.termsAcceptance };
   return writeThrough("DELETE", "/api/me/data");
 }

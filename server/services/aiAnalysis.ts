@@ -44,7 +44,8 @@ export async function analyzePortfolio(
   riskTolerance: RiskTolerance,
   timeline: Timeline,
   heldSymbols: string[] = [],
-  linkedInvestmentSummary?: string
+  linkedInvestmentSummary?: string,
+  spendingSummary?: string
 ): Promise<PortfolioAnalysis> {
   const quotes: QuoteMap = heldSymbols.length > 0
     ? await getMultipleQuotes(heldSymbols.map((s) => s.toUpperCase()))
@@ -58,9 +59,13 @@ Portfolio:
 - Risk tolerance: ${riskTolerance}
 - Timeline: ${timeline}
 ${linkedInvestmentSummary ? `
-User-authorized linked investment holdings:
+Linked investment holdings (shared under the user's accepted Terms):
 ${linkedInvestmentSummary}
 These institution-reported values may be cached and may overlap with manually entered holdings. Do not double-count overlapping positions, and do not treat institution values as live market quotes.
+` : ""}${spendingSummary ? `
+Cash-flow summary from the user's linked bank accounts (calculated, not raw transactions):
+${spendingSummary}
+Treat these as rough estimates of investable cash, not guaranteed income. Do not recommend investing more than the user can afford based on this summary.
 ` : ""}
 
 Verified market data (the only current prices you may rely on):

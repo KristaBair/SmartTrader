@@ -1,13 +1,14 @@
 // App entry point. Sets up providers, handles auth gating, and wires up routes.
 // Trading signal polling also lives here so alerts work on every page.
 
-import { Switch, Route } from "wouter";
+import { useState } from "react";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UserProvider, useUser } from "@/context/UserContext";
-import { getOnboarding } from "@/lib/userData";
+import { getOnboarding, hasAcceptedCurrentTerms } from "@/lib/userData";
 import { useSignalPolling } from "@/hooks/useSignalPolling";
 import TradingAlerts from "@/components/TradingAlerts";
 import SignIn from "@/pages/sign-in";
@@ -18,9 +19,13 @@ import Invest from "@/pages/invest";
 import Patterns from "@/pages/patterns";
 import Analytics from "@/pages/analytics";
 import NotFound from "@/pages/not-found";
+import TermsPage, { TermsAcceptanceGate } from "@/pages/terms";
 
 function Router() {
   const { isSignedIn, isLoading } = useUser();
+  const [location] = useLocation();
+  // Bumped after the user accepts the Terms so the gate below re-reads the cache.
+  const [, setTermsAccepted] = useState(0);
 
   // Only poll for signals when someone is actually signed in. No point hitting
   // the API on the sign-in screen
@@ -35,9 +40,19 @@ function Router() {
     );
   }
 
+  // The Terms are readable without an account so people can review them before signing up
+  if (location === "/terms") {
+    return <TermsPage />;
+  }
+
   // If no one is signed in, the whole app collapses to the sign-in screen
   if (!isSignedIn) {
     return <SignIn />;
+  }
+
+  // New users and anyone who accepted an older version must agree before continuing
+  if (!hasAcceptedCurrentTerms()) {
+    return <TermsAcceptanceGate onAccepted={() => setTermsAccepted((n) => n + 1)} />;
   }
 
   // Check if this user has finished the one-time setup flow

@@ -4,6 +4,8 @@
 //   USER#<cognitoSub>  PORTFOLIO          SavedPortfolio
 //   USER#<cognitoSub>  ONBOARDING         SavedOnboarding
 //   USER#<cognitoSub>  RECOMMENDATIONS    Recommendation[]
+//   USER#<cognitoSub>  TERMS              TermsAcceptance
+//   USER#<cognitoSub>  PLAID#<itemId>     StoredPlaidItem
 //   MARKET#<symbol>    QUOTE              MarketData (fallback when Finnhub has no price)
 //
 // Every user item is keyed by the Cognito `sub` taken from a verified token, so one
@@ -13,6 +15,7 @@ import {
   BatchGetCommand,
   BatchWriteCommand,
   DeleteCommand,
+  GetCommand,
   PutCommand,
   QueryCommand,
 } from "@aws-sdk/lib-dynamodb";
@@ -22,12 +25,13 @@ import type {
   Recommendation,
   SavedOnboarding,
   SavedPortfolio,
+  TermsAcceptance,
   UserData,
 } from "@shared/schema";
 
 const TableName = awsConfig.tableName;
 
-type UserItemKind = "PORTFOLIO" | "ONBOARDING" | "RECOMMENDATIONS";
+type UserItemKind = "PORTFOLIO" | "ONBOARDING" | "RECOMMENDATIONS" | "TERMS";
 
 const userPk = (userId: string) => `USER#${userId}`;
 
@@ -98,6 +102,7 @@ export class DynamoStorage {
       portfolio: (bySk.PORTFOLIO as SavedPortfolio | undefined) ?? null,
       onboarding: (bySk.ONBOARDING as SavedOnboarding | undefined) ?? null,
       recommendations: (bySk.RECOMMENDATIONS as Recommendation[] | undefined) ?? [],
+      termsAcceptance: (bySk.TERMS as TermsAcceptance | undefined) ?? null,
     };
   }
 
@@ -111,6 +116,18 @@ export class DynamoStorage {
 
   async saveRecommendations(userId: string, recommendations: Recommendation[]): Promise<void> {
     await putUserItem(userId, "RECOMMENDATIONS", recommendations);
+  }
+
+  async getTermsAcceptance(userId: string): Promise<TermsAcceptance | null> {
+    const result = await dynamo.send(
+      new GetCommand({ TableName, Key: { PK: userPk(userId), SK: "TERMS" } })
+    );
+    return (result.Item?.data as TermsAcceptance | undefined) ?? null;
+  }
+
+  // Kept separately from the "reset" data so a reset never erases the consent record.
+  async saveTermsAcceptance(userId: string, acceptance: TermsAcceptance): Promise<void> {
+    await putUserItem(userId, "TERMS", acceptance);
   }
 
   async getPlaidItems(userId: string): Promise<StoredPlaidItem[]> {

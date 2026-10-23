@@ -1,1 +1,2 @@
 - [Market data sources](market-data-sources.md) — Finnhub for live quotes, Yahoo Finance (keyless) for historical candles; Finnhub free tier blocks /stock/candle and returns c:0 for VIX.
+- [AWS CLI installation](aws-cli-install.md) — the current v2 installer uses XDG paths and rejects older `-i` install flags.

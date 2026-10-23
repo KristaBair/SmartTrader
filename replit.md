@@ -28,6 +28,9 @@ User data is stored in Amazon DynamoDB per Cognito user. Backend secures API key
 - Portfolio, onboarding, and recommendations stored in DynamoDB under `USER#<cognito sub>` (`server/storage.ts`), loaded once at sign-in and written through on every change (`client/src/lib/userData.ts`)
 - React context (`UserContext`) provides `user`, `refreshUser`, `signOut` to all pages
 - AWS resources are defined in `infra/smarttrader.yaml`
+- AWS resources are managed by the existing stack. Do not create AWS resources in the AWS Console; use the stack's outputs for app configuration.
+- Sign-in must use Amazon Cognito with the stack outputs mapped to `COGNITO_USER_POOL_ID` and `COGNITO_CLIENT_ID`. Do not replace it with a Flask hosted-login flow.
+- Store `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` only in Replit Secrets, never in `.replit` or source files.
 
 The system is built as a modern React SPA with an Express.js backend, featuring a clean separation between client and server code with shared type definitions.
 

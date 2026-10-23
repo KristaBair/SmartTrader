@@ -28,34 +28,60 @@ function getPlaidClientId() {
   return process.env.PLAID_CLIENT_ID || process.env.PlaidClientID;
 }
 
+// Picks the secret for the active environment. The Production secret is never
+// returned unless Production is explicitly approved; the generic PLAID_SECRET /
+// PlaidSecret names are treated as Sandbox-only so they can't reach Production.
+export function selectPlaidSecret(
+  environment: PlaidSetupStatus["environment"],
+  productionApproved: boolean,
+  env: NodeJS.ProcessEnv = process.env
+): string | undefined {
+  if (environment === "sandbox") {
+    return env.PLAID_SANDBOX_SECRET
+      || env.PlaidSandboxSecret
+      || env.PLAID_SECRET
+      || env.PlaidSecret;
+  }
+  if (environment === "production" && productionApproved) {
+    return env.PLAID_PRODUCTION_SECRET || env.PlaidProductionSecret;
+  }
+  return undefined;
+}
+
+function readPlaidEnvironment(): PlaidSetupStatus["environment"] {
+  const value = (process.env.PLAID_ENV || "sandbox").trim().toLowerCase();
+  return value === "sandbox" || value === "production" ? value : "invalid";
+}
+
+function isProductionApproved() {
+  return process.env.PLAID_PRODUCTION_APPROVED === "true";
+}
+
 function getPlaidSecret() {
-  return process.env.PLAID_SECRET || process.env.PlaidSecret;
+  return selectPlaidSecret(readPlaidEnvironment(), isProductionApproved());
 }
 
 export function getPlaidSetupStatus(): PlaidSetupStatus {
-  const environmentValue = (process.env.PLAID_ENV || "sandbox").trim().toLowerCase();
-  const environment = environmentValue === "sandbox" || environmentValue === "production"
-    ? environmentValue
-    : "invalid";
+  const environment = readPlaidEnvironment();
   const products = (process.env.PLAID_PRODUCTS || "investments")
     .split(",")
     .map((product) => product.trim().toLowerCase())
     .filter(Boolean);
   const hasCredentials = Boolean(getPlaidClientId() && getPlaidSecret());
   const hasEncryptionKey = readEncryptionKey() !== null;
-  const productionApproved = process.env.PLAID_PRODUCTION_APPROVED === "true";
+  const productionApproved = isProductionApproved();
   const supportedProducts = new Set(["investments", "transactions"]);
   const validProducts = products.length > 0
     && new Set(products).size === products.length
     && products.every((product) => supportedProducts.has(product));
 
   let message: string | undefined;
-  if (!hasCredentials || !hasEncryptionKey) {
-    message = "Plaid Sandbox setup is incomplete. Ask the site administrator to finish configuration.";
-  } else if (environment === "invalid") {
+  if (environment === "invalid") {
     message = "Plaid environment must be sandbox or production.";
   } else if (environment === "production" && !productionApproved) {
     message = "Plaid Production is disabled until production access is explicitly approved.";
+  } else if (!hasCredentials || !hasEncryptionKey) {
+    message = `Plaid ${environment === "production" ? "Production" : "Sandbox"} setup is incomplete. Ask the site administrator to finish configuration.`;
   } else if (!validProducts) {
     message = "Configured Plaid products are not supported by this release.";
   }

@@ -65,7 +65,12 @@ These are managed as Replit Secrets:
 - `BEDROCK_MODEL_ID` (optional) — defaults to `us.anthropic.claude-sonnet-4-6`
 - `FINNHUB_API_KEY` — live stock quotes
 - `NEWS_API_KEY` — financial news headlines
-- `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_TOKEN_ENCRYPTION_KEY` — Plaid Sandbox credentials and the key used to encrypt stored access tokens
+- `PLAID_CLIENT_ID`, `PLAID_SANDBOX_SECRET`, `PLAID_TOKEN_ENCRYPTION_KEY` — Plaid Sandbox credentials and the key used to encrypt stored access tokens
+- `PLAID_PRODUCTION_SECRET` — used only when `PLAID_ENV=production` and `PLAID_PRODUCTION_APPROVED=true`
+
+The Plaid names also accept `PlaidClientID`, `PlaidSandboxSecret`,
+`PlaidProductionSecret`, and `PlaidEncryptionKey`. `PLAID_SECRET` / `PlaidSecret`
+still work, but only as a Sandbox fallback.
 
 Plaid's non-secret settings are `PLAID_ENV=sandbox` and
 `PLAID_PRODUCTS=investments,transactions`. Generate the token encryption key with

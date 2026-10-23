@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   decryptPlaidAccessToken,
   encryptPlaidAccessToken,
+  selectPlaidSecret,
 } from "./plaid";
 
 const testKey = "a".repeat(64);
@@ -27,4 +28,30 @@ test("tampered Plaid token ciphertext is rejected", () => {
     () => decryptPlaidAccessToken(tampered, "user:item", testKey),
     /Could not decrypt/
   );
+});
+
+const secretEnv = {
+  PlaidSecret: "generic",
+  PlaidSandboxSecret: "sandbox",
+  PlaidProductionSecret: "production",
+};
+
+test("Sandbox uses the Sandbox secret, falling back to the generic secret", () => {
+  assert.equal(selectPlaidSecret("sandbox", false, secretEnv), "sandbox");
+  assert.equal(selectPlaidSecret("sandbox", true, secretEnv), "sandbox");
+  assert.equal(
+    selectPlaidSecret("sandbox", false, { PlaidSecret: "generic", PlaidProductionSecret: "production" }),
+    "generic"
+  );
+  assert.equal(selectPlaidSecret("sandbox", false, { PlaidProductionSecret: "production" }), undefined);
+});
+
+test("the Production secret is used only when Production is approved", () => {
+  assert.equal(selectPlaidSecret("production", false, secretEnv), undefined);
+  assert.equal(selectPlaidSecret("production", true, secretEnv), "production");
+  assert.equal(
+    selectPlaidSecret("production", true, { PlaidSecret: "generic", PlaidSandboxSecret: "sandbox" }),
+    undefined
+  );
+  assert.equal(selectPlaidSecret("invalid", true, secretEnv), undefined);
 });

@@ -15,7 +15,11 @@ interface EncryptedTokenEnvelope {
   ciphertext: string;
 }
 
-function readEncryptionKey(secret = process.env.PLAID_TOKEN_ENCRYPTION_KEY): Buffer | null {
+function getPlaidEncryptionKey() {
+  return process.env.PLAID_TOKEN_ENCRYPTION_KEY || process.env.PlaidEncryptionKey;
+}
+
+function readEncryptionKey(secret = getPlaidEncryptionKey()): Buffer | null {
   if (!secret || !/^[a-f0-9]{64}$/i.test(secret)) return null;
   return Buffer.from(secret, "hex");
 }
@@ -90,7 +94,7 @@ export function createPlaidClient(): PlaidApi {
 export function encryptPlaidAccessToken(
   accessToken: string,
   context: string,
-  secret = process.env.PLAID_TOKEN_ENCRYPTION_KEY
+  secret = getPlaidEncryptionKey()
 ): string {
   const key = readEncryptionKey(secret);
   if (!key) throw new Error("Plaid token encryption is not configured.");
@@ -114,7 +118,7 @@ export function encryptPlaidAccessToken(
 export function decryptPlaidAccessToken(
   encryptedValue: string,
   context: string,
-  secret = process.env.PLAID_TOKEN_ENCRYPTION_KEY
+  secret = getPlaidEncryptionKey()
 ): string {
   const key = readEncryptionKey(secret);
   if (!key) throw new Error("Plaid token encryption is not configured.");

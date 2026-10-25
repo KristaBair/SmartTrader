@@ -5,7 +5,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Pause, Pencil, Play, Archive, ArchiveRestore, Trash2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Pause, Pencil, Play, Archive, ArchiveRestore, Trash2, MessageSquareText } from "lucide-react";
+import { Link } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { errorMessage, shortDate, usd } from "@/lib/format";
 import { toast } from "@/hooks/use-toast";
@@ -136,6 +137,15 @@ export default function GoalCard({ goal, onEdit }: { goal: GoalView; onEdit: () 
             </div>
           )}
         </div>
+
+        {goal.status !== "archived" && (
+          <Link
+            href={`/advisor?q=${encodeURIComponent(`What are some realistic ways to reach my goal "${goal.name}"?`)}`}
+            className="inline-flex items-center gap-1 text-xs text-indigo-700 hover:underline"
+          >
+            <MessageSquareText className="h-3.5 w-3.5" /> Ask the AI Advisor about this goal
+          </Link>
+        )}
 
         <div className="flex flex-wrap gap-2">
           {goal.status === "active" && <Button size="sm" variant="outline" disabled={busy} onClick={() => setStatus("paused")}><Pause className="h-4 w-4 mr-1" /> Pause</Button>}

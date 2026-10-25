@@ -79,10 +79,40 @@ async function loadItem(
   }
 }
 
+// Several features (and one AI Advisor question) read the same live data within
+// seconds. Results are reused for a short time per user, in memory only, and
+// dropped whenever the user links or removes a connection.
+const CACHE_TTL_MS = 30_000;
+const linkedCache = new Map<string, { at: number; value: Promise<LinkedFinancialData> }>();
+const transactionsCache = new Map<string, { at: number; value: Promise<BankTransactionSet> }>();
+
+function cached<T>(cache: Map<string, { at: number; value: Promise<T> }>, key: string, load: () => Promise<T>): Promise<T> {
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.value;
+  const value = load();
+  cache.set(key, { at: Date.now(), value });
+  // Never keep a failure around.
+  value.catch(() => { if (cache.get(key)?.value === value) cache.delete(key); });
+  return value;
+}
+
+export function invalidateFinancialCache(userId: string) {
+  for (const key of Array.from(linkedCache.keys())) if (key === userId) linkedCache.delete(key);
+  for (const key of Array.from(transactionsCache.keys())) if (key.startsWith(`${userId}|`)) transactionsCache.delete(key);
+}
+
+export function loadLinkedFinancialData(userId: string): Promise<LinkedFinancialData> {
+  return cached(linkedCache, userId, () => fetchLinkedFinancialData(userId));
+}
+
+export function loadBankTransactions(userId: string, days = 90): Promise<BankTransactionSet> {
+  return cached(transactionsCache, `${userId}|${days}`, () => fetchBankTransactions(userId, days));
+}
+
 // Every linked account and holding, de-duplicated across connections. A
 // connection that fails is reported in `institutions` rather than thrown, so
 // one broken bank never hides the others.
-export async function loadLinkedFinancialData(userId: string): Promise<LinkedFinancialData> {
+async function fetchLinkedFinancialData(userId: string): Promise<LinkedFinancialData> {
   const status = getPlaidSetupStatus();
   if (!status.configured) {
     return { plaidConfigured: false, institutions: [], accounts: [], holdings: [], duplicateAccountCount: 0 };
@@ -135,7 +165,7 @@ export interface BankTransactionSet {
 const MAX_TRANSACTIONS_PER_ITEM = 5_000;
 
 // Pulls up to `days` of USD transactions from every connection linked for spending.
-export async function loadBankTransactions(userId: string, days = 90): Promise<BankTransactionSet> {
+async function fetchBankTransactions(userId: string, days: number): Promise<BankTransactionSet> {
   const items = (await storage.getPlaidItems(userId)).filter((item) =>
     (item.products || []).includes("transactions")
   );

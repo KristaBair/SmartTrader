@@ -13,6 +13,7 @@
 //   USER#<cognitoSub>  POOLHIST#<poolId>#<iso time>#<id>   AllocationHistoryEntry
 //   USER#<cognitoSub>  GOAL#<id>          Goal
 //   USER#<cognitoSub>  SPENDING_PREFS     SpendingPrefs (classification choices, added expenses)
+//   USER#<cognitoSub>  ADVISOR_PREFS      AdvisorPrefs (which data the AI Advisor may use)
 //   MARKET#<symbol>    QUOTE              Legacy placeholder quotes; no longer read or written
 //
 // Every user item is keyed by the Cognito `sub` taken from a verified token, so one
@@ -38,10 +39,11 @@ import { reconciliationSchema, type ManualLiability, type ReconciliationDecision
 import type { AllocationHistoryEntry, AllocationLedger, Pool } from "@shared/pools";
 import type { Goal } from "@shared/goals";
 import { spendingPrefsSchema, type SpendingPrefs } from "@shared/cashflow";
+import { advisorPrefsSchema, type AdvisorPrefs } from "@shared/advisor";
 
 const TableName = awsConfig.tableName;
 
-type UserItemKind = "PORTFOLIO" | "ONBOARDING" | "RECOMMENDATIONS" | "TERMS" | "RECONCILIATION" | "SPENDING_PREFS";
+type UserItemKind = "PORTFOLIO" | "ONBOARDING" | "RECOMMENDATIONS" | "TERMS" | "RECONCILIATION" | "SPENDING_PREFS" | "ADVISOR_PREFS";
 
 const userPk = (userId: string) => `USER#${userId}`;
 
@@ -332,6 +334,16 @@ export class DynamoStorage {
 
   async saveSpendingPrefs(userId: string, prefs: SpendingPrefs): Promise<void> {
     await putUserItem(userId, "SPENDING_PREFS", prefs);
+  }
+
+  async getAdvisorPrefs(userId: string): Promise<AdvisorPrefs> {
+    const result = await dynamo.send(new GetCommand({ TableName, Key: { PK: userPk(userId), SK: "ADVISOR_PREFS" } }));
+    const parsed = advisorPrefsSchema.safeParse(result.Item?.data ?? {});
+    return parsed.success ? parsed.data : advisorPrefsSchema.parse({});
+  }
+
+  async saveAdvisorPrefs(userId: string, prefs: AdvisorPrefs): Promise<void> {
+    await putUserItem(userId, "ADVISOR_PREFS", prefs);
   }
 
   // Removes portfolio, onboarding, and recommendations (the "reset" button).

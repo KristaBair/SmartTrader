@@ -35,6 +35,7 @@ import {
 } from "./services/plaid";
 import type { SpendingAnalysisSummary } from "./services/spendingAnalysis";
 import {
+  invalidateFinancialCache,
   loadSpendingAnalysis,
   logPlaidFailure,
   SpendingAnalysisError,
@@ -45,6 +46,7 @@ import { registerFinanceRoutes } from "./financeRoutes";
 import { registerPoolRoutes } from "./poolRoutes";
 import { registerGoalRoutes } from "./goalRoutes";
 import { registerPlanningRoutes } from "./planningRoutes";
+import { registerAdvisorRoutes } from "./advisorRoutes";
 
 interface TradingSignal {
   ticker: string;
@@ -342,11 +344,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Could not verify Terms acceptance" });
     }
   };
-  app.use(["/api/plaid", "/api/spending", "/api/portfolios/analyze-direct", "/api/finances", "/api/pools", "/api/goals", "/api/planning"], requireCurrentTerms);
+  app.use(["/api/plaid", "/api/spending", "/api/portfolios/analyze-direct", "/api/finances", "/api/pools", "/api/goals", "/api/planning", "/api/advisor"], requireCurrentTerms);
   registerFinanceRoutes(app);
   registerPoolRoutes(app);
   registerGoalRoutes(app);
   registerPlanningRoutes(app);
+  registerAdvisorRoutes(app);
 
   app.put("/api/me/terms", async (req, res) => {
     const body = z.object({ version: z.literal(TERMS_VERSION) }).safeParse(req.body);
@@ -479,6 +482,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...(institutionName ? { institutionName } : {}),
         connectedAt: existing?.connectedAt || new Date().toISOString(),
       });
+      invalidateFinancialCache(userId);
 
       res.status(201).json({ connected: true });
     } catch (error) {
@@ -585,6 +589,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Always remove the local encrypted credential, even if Plaid cannot confirm revocation.
       await storage.deletePlaidItem(userId, item.itemId);
+      invalidateFinancialCache(userId);
       res.json({
         disconnected: true,
         providerRevocationConfirmed,

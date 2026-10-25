@@ -18,22 +18,21 @@ export type { SavedOnboarding, SavedPortfolio };
 
 // Shape the dashboard summary widgets need. Derived from a SavedPortfolio so the
 // presentational components don't have to know about the storage layout.
+// Values here are what the user entered; market prices are looked up separately.
 export interface PortfolioView {
-  cash: string;
-  investments: { symbol: string; name: string; currentValue: number }[];
-  initialInvestment?: string | null;
-  monthlyContribution?: string | null;
-  totalContributions?: string | null;
+  cash: number;
+  investments: { symbol: string; name: string; shares: number; averagePrice: number }[];
 }
 
 export function toPortfolioView(p: SavedPortfolio | null): PortfolioView | undefined {
   if (!p) return undefined;
   return {
-    cash: String(p.cash ?? 0),
+    cash: p.cash ?? 0,
     investments: p.investments.map((i) => ({
-      symbol: i.symbol,
+      symbol: i.symbol.toUpperCase(),
       name: i.name,
-      currentValue: i.shares * i.averagePrice,
+      shares: i.shares,
+      averagePrice: i.averagePrice,
     })),
   };
 }

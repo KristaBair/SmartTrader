@@ -11,7 +11,6 @@ import SpendingAnalysisPanel from "@/components/spending-analysis";
 import AIRecommendations from "@/components/ai-recommendations";
 import MarketTrends from "@/components/market-trends";
 import PortfolioOverview from "@/components/portfolio-overview";
-import PortfolioGrowthChart from "@/components/portfolio-growth-chart";
 import { useToast } from "@/hooks/use-toast";
 import { Bell, RefreshCw, TrendingUp, BarChart2, Trash2, DollarSign, Brain, FlaskConical, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -30,8 +29,7 @@ export default function Dashboard() {
 
   const onboarding = getOnboarding();
 
-  // Memoize so unrelated re-renders don't hand the widgets a brand new object,
-  // which would otherwise re-run their internal useMemo and reshuffle the chart.
+  // Memoize so unrelated re-renders don't hand the widgets a brand new object.
   const portfolioView = useMemo(() => toPortfolioView(portfolio), [portfolio]);
 
   // Restore cached recommendations so the user sees their last analysis right away
@@ -278,10 +276,7 @@ export default function Dashboard() {
 
         <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
           <PortfolioOverview portfolio={portfolioView} isLoading={false} />
-          <div className="space-y-8">
-            <PortfolioGrowthChart portfolio={portfolioView} isLoading={false} />
-            <MarketTrends />
-          </div>
+          <MarketTrends />
         </div>
       </div>
     </div>

@@ -6,13 +6,12 @@
 //   USER#<cognitoSub>  RECOMMENDATIONS    Recommendation[]
 //   USER#<cognitoSub>  TERMS              TermsAcceptance
 //   USER#<cognitoSub>  PLAID#<itemId>     StoredPlaidItem
-//   MARKET#<symbol>    QUOTE              MarketData (fallback when Finnhub has no price)
+//   MARKET#<symbol>    QUOTE              Legacy placeholder quotes; no longer read or written
 //
 // Every user item is keyed by the Cognito `sub` taken from a verified token, so one
 // user can never read or write another user's partition.
 
 import {
-  BatchGetCommand,
   BatchWriteCommand,
   DeleteCommand,
   GetCommand,
@@ -21,7 +20,6 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import { awsConfig, dynamo } from "./aws";
 import type {
-  MarketData,
   Recommendation,
   SavedOnboarding,
   SavedPortfolio,
@@ -55,36 +53,6 @@ async function putUserItem(userId: string, sk: UserItemKind, data: unknown) {
 }
 
 export class DynamoStorage {
-  constructor() {
-    // Seed fallback market data on startup
-    this.initializeMarketData();
-  }
-
-  private async initializeMarketData() {
-    const seed: MarketData[] = [
-      { symbol: "SPY", price: "432.78", change: "5.12", changePercent: "1.2" },
-      { symbol: "QQQ", price: "343.34", change: "7.68", changePercent: "2.1" },
-      { symbol: "VIX", price: "16.82", change: "-0.13", changePercent: "-0.8" },
-    ];
-
-    for (const data of seed) {
-      try {
-        await dynamo.send(
-          new PutCommand({
-            TableName,
-            Item: { PK: `MARKET#${data.symbol}`, SK: "QUOTE", ...data, updatedAt: new Date().toISOString() },
-            // Never overwrite a value that is already there
-            ConditionExpression: "attribute_not_exists(PK)",
-          })
-        );
-      } catch (error) {
-        if ((error as Error).name !== "ConditionalCheckFailedException") {
-          console.log("Market data initialization skipped:", error);
-        }
-      }
-    }
-  }
-
   // ── User data ──────────────────────────────────────────────────────────────
 
   // Loads portfolio, onboarding, and recommendations in a single query.
@@ -179,20 +147,6 @@ export class DynamoStorage {
         },
       })
     );
-  }
-
-  // ── Market data fallback ─────────────────────────────────────────────────
-
-  // Looks up stored quotes by key. Missing symbols are simply left out.
-  async getMarketDataBySymbols(symbols: string[]): Promise<MarketData[]> {
-    const result = await dynamo.send(
-      new BatchGetCommand({
-        RequestItems: {
-          [TableName]: { Keys: symbols.map((symbol) => ({ PK: `MARKET#${symbol}`, SK: "QUOTE" })) },
-        },
-      })
-    );
-    return (result.Responses?.[TableName] ?? []) as MarketData[];
   }
 }
 

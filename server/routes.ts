@@ -17,6 +17,7 @@ import {
   recommendationSchema,
   savedOnboardingSchema,
   savedPortfolioSchema,
+  type MarketData,
 } from "@shared/schema";
 import multer from "multer";
 import { z } from "zod";
@@ -38,6 +39,7 @@ import {
   type SpendingAnalysisSummary,
 } from "./services/spendingAnalysis";
 import { TERMS_VERSION } from "@shared/terms";
+import { findOverlappingSymbols } from "./services/holdingsReconciliation";
 
 interface TradingSignal {
   ticker: string;
@@ -790,6 +792,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           linkedDataNotices.push("Bank spending data could not be summarized, so it was left out.");
         }
       }
+      // The same position entered by hand and also linked would otherwise be counted twice.
+      const overlappingSymbols = findOverlappingSymbols(heldSymbols, linkedSymbols);
+      if (overlappingSymbols.length > 0) {
+        linkedInvestmentSummary += `\nThese tickers appear in both the manual list and the linked accounts: ${overlappingSymbols.join(", ")}. Treat each as one position (use the linked quantity) unless the user says the manual entry is a separate, unlinked account.`;
+        linkedDataNotices.push(`${overlappingSymbols.join(", ")} appear${overlappingSymbols.length === 1 ? "s" : ""} in both your manual holdings and a linked account. The analysis treated each as one position. Remove the manual entry if it's the same holding.`);
+      }
       const analysis = await analyzePortfolio(
         parseFloat(cash) || 0,
         investments || "",
@@ -929,35 +937,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Market overview shown on the dashboard (SPY, QQQ, VIX).
-  // Fetches live quotes from Finnhub on every request so the numbers are always current.
-  // Falls back to the DynamoDB seed values if Finnhub can't return a price.
+  // Fetches quotes from Finnhub on every request. A symbol Finnhub can't price
+  // (the free tier doesn't cover VIX) is reported as unavailable, never filled in.
   app.get("/api/market-data", async (_req, res) => {
     try {
       const symbols = ["SPY", "QQQ", "VIX"];
       const quotes = await getMultipleQuotes(symbols);
 
-      // Build a response that matches the MarketData shape the frontend expects.
-      // For any symbol Finnhub doesn't cover (VIX can be hit or miss), fall back to DynamoDB.
-      const dbFallback = await storage.getMarketDataBySymbols(symbols);
-      const fallbackMap = Object.fromEntries(dbFallback.map((d) => [d.symbol, d]));
-
-      const result = symbols.map((sym) => {
-        const q = quotes[sym];
-        if (q && q.price > 0) {
-          return {
-            symbol: sym,
-            price: q.price.toString(),
-            change: q.change.toString(),
-            changePercent: q.changePercent.toString(),
-          };
+      const result: MarketData[] = symbols.map((symbol) => {
+        const q = quotes[symbol];
+        if (!q || !(q.price > 0)) {
+          return { symbol, available: false, price: null, change: null, changePercent: null, source: null, asOf: null, freshness: null };
         }
-        // Map the DB fallback row to the same DTO shape as the live branch.
-        const fb = fallbackMap[sym];
         return {
-          symbol: sym,
-          price: fb?.price ?? "0",
-          change: fb?.change ?? "0",
-          changePercent: fb?.changePercent ?? "0",
+          symbol,
+          available: true,
+          price: q.price,
+          change: q.change,
+          changePercent: q.changePercent,
+          source: q.provenance.source,
+          asOf: q.provenance.asOf,
+          freshness: q.provenance.freshness,
         };
       });
 

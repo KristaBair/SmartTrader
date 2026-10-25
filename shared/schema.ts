@@ -6,12 +6,17 @@ import { z } from "zod";
 
 // ── Market data (dashboard overview: SPY, QQQ, VIX) ─────────────────────────
 
+// A verified quote, or an explicit "unavailable" when none could be confirmed.
+// There is deliberately no fallback value: a missing price is shown as missing.
 export interface MarketData {
   symbol: string;
-  price: string;
-  change: string;
-  changePercent: string;
-  updatedAt?: string;
+  available: boolean;
+  price: number | null;
+  change: number | null;
+  changePercent: number | null;
+  source: string | null;
+  asOf: string | null;
+  freshness: "real-time" | "delayed" | "previous-close" | "historical" | null;
 }
 
 // ── AI recommendations ──────────────────────────────────────────────────────

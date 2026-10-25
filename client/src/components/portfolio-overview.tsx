@@ -1,6 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Wallet } from "lucide-react";
+import { Wallet, AlertTriangle } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 import type { PortfolioView } from "@/lib/userData";
 
 interface PortfolioOverviewProps {
@@ -8,180 +10,143 @@ interface PortfolioOverviewProps {
   isLoading: boolean;
 }
 
+// Subset of the server's StockQuote that this card uses.
+interface VerifiedQuote {
+  price: number;
+  provenance: { source: string; asOf: string; freshness: string };
+}
+
+const usd = (value: number) =>
+  value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+
+// Summary of the user's manually entered holdings, valued at verified quotes.
+// Gain/loss uses the average cost the user entered; holdings without a verified
+// quote are listed as unpriced and left out of market-value totals.
 export default function PortfolioOverview({ portfolio, isLoading }: PortfolioOverviewProps) {
-  if (isLoading) {
+  const symbols = Array.from(new Set(portfolio?.investments.map((i) => i.symbol) ?? [])).sort();
+  const { data: quotes = {}, isLoading: quotesLoading, isError: quotesError } = useQuery<Record<string, VerifiedQuote>>({
+    queryKey: ["/api/stocks/quotes", symbols],
+    queryFn: async () => (await apiRequest("POST", "/api/stocks/quotes", { symbols })).json(),
+    enabled: symbols.length > 0,
+    staleTime: 60_000,
+  });
+
+  const header = (
+    <CardHeader>
+      <CardTitle className="flex items-center">
+        <Wallet className="text-accent mr-3" />
+        Manual Holdings Overview
+      </CardTitle>
+    </CardHeader>
+  );
+
+  if (isLoading || (symbols.length > 0 && quotesLoading)) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Wallet className="text-accent mr-3" />
-            Portfolio Overview
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="p-4 bg-gray-50 rounded-lg">
-                  <div className="flex justify-between items-center">
-                    <Skeleton className="h-4 w-24" />
-                    <Skeleton className="h-6 w-20" />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div>
-              <Skeleton className="h-4 w-32 mb-4" />
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <Skeleton className="w-3 h-3 rounded-full" />
-                      <Skeleton className="h-3 w-16" />
-                    </div>
-                    <Skeleton className="h-3 w-8" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+        {header}
+        <CardContent className="space-y-3">
+          {[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
         </CardContent>
       </Card>
     );
   }
 
-  if (!portfolio) {
+  if (!portfolio || (portfolio.investments.length === 0 && portfolio.cash === 0)) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Wallet className="text-accent mr-3" />
-            Portfolio Overview
-          </CardTitle>
-        </CardHeader>
+        {header}
         <CardContent>
           <div className="text-center py-8 text-gray-500" data-testid="empty-portfolio">
             <Wallet className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-            <p className="text-lg font-medium mb-2">No Portfolio Data</p>
-            <p className="text-sm">Add your portfolio details to see an overview of your investments.</p>
+            <p className="text-lg font-medium mb-2">No manual holdings</p>
+            <p className="text-sm">Add holdings you hold outside your linked accounts to see them valued here.</p>
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  // Calculate portfolio metrics
-  const totalInvestmentValue = portfolio.investments.reduce((sum, inv) => sum + inv.currentValue, 0);
-  const cash = parseFloat(portfolio.cash);
-  const totalPortfolioValue = totalInvestmentValue + cash;
-  const initialInvestment = parseFloat(portfolio.initialInvestment || '0');
-  const monthlyContribution = parseFloat(portfolio.monthlyContribution || '0');
-  const totalContributions = parseFloat(portfolio.totalContributions || '0');
-  
-  // Mock calculations for gain/loss (in a real app, this would be calculated based on purchase prices)
-  const mockInitialValue = totalInvestmentValue * 0.9; // Assume 10% gain for demo
-  const totalGainLoss = totalInvestmentValue - mockInitialValue;
-  const gainLossPercentage = mockInitialValue > 0 ? (totalGainLoss / mockInitialValue) * 100 : 0;
-
-  // Calculate asset allocation
-  const stocksValue = portfolio.investments
-    .filter(inv => !inv.symbol.includes('ETF') && !inv.symbol.includes('BTC'))
-    .reduce((sum, inv) => sum + inv.currentValue, 0);
-  
-  const etfsValue = portfolio.investments
-    .filter(inv => inv.symbol.includes('ETF') || inv.name.toLowerCase().includes('etf'))
-    .reduce((sum, inv) => sum + inv.currentValue, 0);
-  
-  const cryptoValue = portfolio.investments
-    .filter(inv => inv.symbol.includes('BTC') || inv.name.toLowerCase().includes('bitcoin'))
-    .reduce((sum, inv) => sum + inv.currentValue, 0);
-
-  const allocations = [
-    { name: "Stocks", value: stocksValue, color: "bg-blue-500", percentage: ((stocksValue / totalInvestmentValue) * 100).toFixed(0) },
-    { name: "ETFs", value: etfsValue, color: "bg-green-500", percentage: ((etfsValue / totalInvestmentValue) * 100).toFixed(0) },
-    { name: "Crypto", value: cryptoValue, color: "bg-orange-500", percentage: ((cryptoValue / totalInvestmentValue) * 100).toFixed(0) },
-  ].filter(allocation => allocation.value > 0);
+  const rows = portfolio.investments.map((inv) => {
+    const quote = quotes[inv.symbol];
+    const costBasis = inv.averagePrice > 0 ? inv.shares * inv.averagePrice : null;
+    const marketValue = quote ? inv.shares * quote.price : null;
+    return { ...inv, quote, costBasis, marketValue };
+  });
+  const priced = rows.filter((r) => r.marketValue !== null);
+  const unpriced = rows.filter((r) => r.marketValue === null);
+  const marketValueTotal = priced.reduce((sum, r) => sum + r.marketValue!, 0);
+  // Only holdings with both a cost and a verified price contribute to gain/loss.
+  const comparable = priced.filter((r) => r.costBasis !== null);
+  const comparableCost = comparable.reduce((sum, r) => sum + r.costBasis!, 0);
+  const gainLoss = comparable.reduce((sum, r) => sum + (r.marketValue! - r.costBasis!), 0);
+  const gainLossPct = comparableCost > 0 ? (gainLoss / comparableCost) * 100 : null;
+  const latestAsOf = priced
+    .map((r) => r.quote!.provenance.asOf)
+    .sort()
+    .at(-1);
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center">
-          <Wallet className="text-accent mr-3" />
-          Portfolio Overview
-        </CardTitle>
-      </CardHeader>
+      {header}
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Portfolio Summary */}
-          <div>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg" data-testid="total-portfolio-value">
-                <span className="text-gray-600">Total Portfolio Value</span>
-                <span className="text-2xl font-bold text-gray-900 font-mono">
-                  ${totalPortfolioValue.toLocaleString()}
+          <div className="space-y-4">
+            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg" data-testid="total-portfolio-value">
+              <span className="text-gray-600">Market value of priced holdings</span>
+              <span className="text-2xl font-bold text-gray-900 font-mono">{usd(marketValueTotal)}</span>
+            </div>
+
+            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg" data-testid="total-gain-loss">
+              <span className="text-gray-600">Gain/loss vs. your average cost</span>
+              {gainLossPct === null ? (
+                <span className="text-sm text-gray-500">Needs average cost and a verified price</span>
+              ) : (
+                <span className={`text-lg font-semibold font-mono ${gainLoss >= 0 ? "text-profit" : "text-loss"}`}>
+                  {gainLoss >= 0 ? "+" : ""}{usd(gainLoss)} ({gainLoss >= 0 ? "+" : ""}{gainLossPct.toFixed(1)}%)
                 </span>
-              </div>
-              
-              <div className="flex justify-between items-center p-4 bg-green-50 rounded-lg" data-testid="total-gain-loss">
-                <span className="text-green-700">Total Gain/Loss</span>
-                <span className={`text-lg font-semibold font-mono ${totalGainLoss >= 0 ? 'text-profit' : 'text-loss'}`}>
-                  {totalGainLoss >= 0 ? '+' : ''}${totalGainLoss.toFixed(0)} ({totalGainLoss >= 0 ? '+' : ''}{gainLossPercentage.toFixed(1)}%)
-                </span>
-              </div>
-              
-              <div className="flex justify-between items-center p-4 bg-blue-50 rounded-lg" data-testid="available-cash">
-                <span className="text-blue-700">Available Cash</span>
-                <span className="text-lg font-semibold text-blue-900 font-mono">
-                  ${cash.toLocaleString()}
-                </span>
-              </div>
-              
-              {initialInvestment > 0 && (
-                <div className="flex justify-between items-center p-4 bg-purple-50 rounded-lg" data-testid="initial-investment">
-                  <span className="text-purple-700">Initial Investment</span>
-                  <span className="text-lg font-semibold text-purple-900 font-mono">
-                    ${initialInvestment.toLocaleString()}
-                  </span>
-                </div>
-              )}
-              
-              {monthlyContribution > 0 && (
-                <div className="flex justify-between items-center p-4 bg-indigo-50 rounded-lg" data-testid="monthly-contribution">
-                  <span className="text-indigo-700">Monthly Contribution</span>
-                  <span className="text-lg font-semibold text-indigo-900 font-mono">
-                    ${monthlyContribution.toLocaleString()}/month
-                  </span>
-                </div>
-              )}
-              
-              {totalContributions > 0 && (
-                <div className="flex justify-between items-center p-4 bg-teal-50 rounded-lg" data-testid="total-contributions">
-                  <span className="text-teal-700">Total Contributions</span>
-                  <span className="text-lg font-semibold text-teal-900 font-mono">
-                    ${totalContributions.toLocaleString()}
-                  </span>
-                </div>
               )}
             </div>
+
+            <div className="flex justify-between items-center p-4 bg-blue-50 rounded-lg" data-testid="available-cash">
+              <span className="text-blue-700">Cash (you entered)</span>
+              <span className="text-lg font-semibold text-blue-900 font-mono">{usd(portfolio.cash)}</span>
+            </div>
+
+            <p className="text-xs text-gray-500">
+              Holdings and cash here are what you entered by hand.
+              {latestAsOf ? ` Prices: Finnhub, latest ${new Date(latestAsOf).toLocaleString()}.` : ""}
+              {" "}Accounts you link with Plaid are shown separately so nothing is counted twice.
+            </p>
           </div>
 
-          {/* Asset Allocation */}
           <div>
-            <h4 className="font-medium text-gray-900 mb-4" data-testid="asset-allocation-title">Asset Allocation</h4>
-            {allocations.length > 0 ? (
+            <h4 className="font-medium text-gray-900 mb-4" data-testid="asset-allocation-title">Allocation by market value</h4>
+            {priced.length > 0 ? (
               <div className="space-y-3">
-                {allocations.map((allocation) => (
-                  <div key={allocation.name} className="flex items-center justify-between" data-testid={`allocation-${allocation.name.toLowerCase()}`}>
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-3 h-3 rounded-full ${allocation.color}`}></div>
-                      <span className="text-sm text-gray-700">{allocation.name}</span>
+                {priced
+                  .sort((a, b) => b.marketValue! - a.marketValue!)
+                  .map((r) => (
+                    <div key={r.symbol} className="flex items-center justify-between" data-testid={`allocation-${r.symbol.toLowerCase()}`}>
+                      <span className="text-sm text-gray-700">{r.symbol} <span className="text-gray-400">· {r.shares} sh</span></span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {((r.marketValue! / marketValueTotal) * 100).toFixed(1)}%
+                      </span>
                     </div>
-                    <span className="text-sm font-medium text-gray-900">{allocation.percentage}%</span>
-                  </div>
-                ))}
+                  ))}
               </div>
             ) : (
-              <p className="text-sm text-gray-500">No asset allocation data available</p>
+              <p className="text-sm text-gray-500">No holdings could be priced yet.</p>
+            )}
+
+            {(unpriced.length > 0 || quotesError) && (
+              <div className="mt-4 flex items-start gap-2 p-3 bg-yellow-50 rounded-lg text-sm text-yellow-800" data-testid="unpriced-holdings">
+                <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <span>
+                  {quotesError
+                    ? "Prices could not be loaded, so market values are not shown."
+                    : `No verified price for ${unpriced.map((r) => r.symbol).join(", ")}. ${unpriced.length === 1 ? "It is" : "They are"} left out of the totals.`}
+                </span>
+              </div>
             )}
           </div>
         </div>

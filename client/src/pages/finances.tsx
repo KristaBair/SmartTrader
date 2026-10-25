@@ -12,6 +12,7 @@ import FinanceNotices from "@/components/finance-notices";
 import FinanceReconciliation from "@/components/finance-reconciliation";
 import ManualDebts from "@/components/manual-debts";
 import PlaidAccountsPanel from "@/components/plaid-accounts";
+import InvestmentPortfolio from "@/components/investment-portfolio";
 import SpendingInsightsPanel from "@/components/spending-insights";
 import { dateTime, errorMessage, shortDate, usd } from "@/lib/format";
 import { CLASS_LABELS } from "@/lib/format";
@@ -192,6 +193,7 @@ export default function FinancesPage() {
               <ManualDebts debts={overview.manualLiabilities} />
             </div>
           </div>
+          <InvestmentPortfolio positions={overview.investmentPositions} />
         </>
       )}
 

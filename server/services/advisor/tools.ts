@@ -43,6 +43,24 @@ const pools = (ctx: ToolContext) => once(ctx, "pools", () => buildPoolsResponse(
 const goals = (ctx: ToolContext) => once(ctx, "goals", () => loadGoals(ctx.userId));
 const defaults = (ctx: ToolContext) => once(ctx, "defaults", () => loadPlannerDefaults(ctx.userId));
 
+function summarizePoolAllocation(
+  a: Awaited<ReturnType<typeof pools>>["pools"][number]["allocations"][number],
+  includeInvestmentDetails: boolean
+) {
+  return {
+    kind: a.kind,
+    assetClass: a.assetClass,
+    symbol: includeInvestmentDetails && a.kind === "shares" ? a.symbol : null,
+    securityName: includeInvestmentDetails && a.kind === "shares" ? a.securityName : null,
+    shares: includeInvestmentDetails && a.kind === "shares" ? a.shares : null,
+    amountAllocated: includeInvestmentDetails && a.kind === "amount" ? a.amount : null,
+    verifiedValue: a.verifiedValue,
+    state: a.state,
+    priceAsOf: a.priceAsOf,
+    securityDetailsAvailable: includeInvestmentDetails,
+  };
+}
+
 const allowed = (ctx: ToolContext, needs: Permission) =>
   needs === "accounts" ? ctx.prefs.useAccounts : needs === "spending" ? ctx.prefs.useSpending : ctx.prefs.usePoolsAndGoals;
 
@@ -91,6 +109,95 @@ export const ADVISOR_TOOLS: AdvisorTool[] = [
     },
   },
   {
+    name: "get_investment_holdings",
+    description: "The user's linked investment positions and manually entered holdings, grouped by stable security identity, with account type association, shares, institution-reported values, available cost basis, and data-quality status. Use for portfolio composition, concentration, and diversification questions.",
+    source: "Your linked investment holdings",
+    needs: ["accounts"],
+    inputSchema: { type: "object", properties: {} },
+    run: async (ctx) => {
+      const o = await overview(ctx);
+      const positions = o.investmentPositions;
+      const linkedInvestmentPositions = positions.filter((p) => !p.isCashEquivalent && p.linkedPositions.length > 0);
+      const linkedPositionRows = linkedInvestmentPositions.flatMap((position) =>
+        position.linkedPositions.map((linked) => ({ position, linked }))
+      );
+      const knownUsdValue = roundMoney(linkedPositionRows.reduce(
+        (sum, row) => sum + (row.linked.currency === "USD" ? row.linked.marketValue ?? 0 : 0),
+        0
+      ));
+      const valueCoverageComplete = linkedPositionRows.length > 0
+        && linkedPositionRows.every((row) => row.linked.currency === "USD" && row.linked.marketValue !== null)
+        && !o.notices.some((n) => n.code === "REAUTH_REQUIRED" || n.code === "INSTITUTION_UNAVAILABLE");
+
+      const concentration = new Map<string, { symbol: string | null; name: string; value: number }>();
+      for (const { position, linked } of linkedPositionRows) {
+        if (linked.currency !== "USD" || linked.marketValue === null) continue;
+        const key = position.symbol?.toUpperCase() || position.name.toLowerCase();
+        const existing = concentration.get(key) ?? { symbol: position.symbol, name: position.name, value: 0 };
+        existing.value = roundMoney(existing.value + linked.marketValue);
+        concentration.set(key, existing);
+      }
+      const concentrationBySecurity = Array.from(concentration.values())
+        .map((entry) => ({
+          ...entry,
+          percentOfKnownUsdHoldings: knownUsdValue > 0 ? roundMoney((entry.value / knownUsdValue) * 100) : null,
+        }))
+        .sort((a, b) => b.value - a.value);
+
+      return {
+        asOf: o.generatedAt,
+        knownUsdValue,
+        valueCoverageComplete,
+        concentrationDenominator: "Known USD values from linked non-cash-equivalent positions only",
+        concentrationBySecurity,
+        positions: positions.map((p) => ({
+          symbol: p.symbol,
+          name: p.name,
+          securityType: p.securityType,
+          securityCategory: p.securityCategory,
+          cashEquivalent: p.isCashEquivalent,
+          currency: p.currency,
+          consolidatedSource: p.source,
+          linkedAccounts: p.linkedPositions.map((account) => ({
+            accountClass: account.accountClass,
+            accountType: account.accountType,
+            accountSubtype: account.accountSubtype,
+            shares: account.shares,
+            marketValue: account.marketValue,
+            costBasis: account.costBasis,
+            currency: account.currency,
+            reportedPrice: account.reportedPrice,
+            priceAsOf: account.priceAsOf,
+            retrievedAt: account.retrievedAt,
+            stalePrice: account.stalePrice,
+          })),
+          manualEntries: p.manualEntries.map((entry) => ({
+            shares: entry.shares,
+            marketValue: entry.marketValue,
+            status: entry.status,
+            priceAsOf: entry.priceAsOf,
+          })),
+        })),
+        dataQuality: {
+          flags: qualityFlags(o.notices.map((n) => n.code)),
+          unpricedPositionCount: linkedPositionRows.filter((row) => row.linked.marketValue === null).length,
+          incompleteValueCount: linkedPositionRows.filter((row) => row.linked.marketValue === null || row.linked.currency !== "USD").length,
+          stalePriceCount: linkedPositionRows.filter((row) => row.linked.stalePrice).length,
+          costBasisMissingCount: linkedPositionRows.filter((row) => row.linked.costBasis === null).length,
+          feesAvailable: false,
+          fundLookThroughAvailable: false,
+          sectorClassificationAvailable: false,
+          limitations: [
+            "Plaid does not provide expense ratios or fees in this holdings response.",
+            "ETF and mutual-fund underlying company holdings are not included.",
+            "Security sector classifications are not available, so sector exposure must not be inferred.",
+            "Position market values come from the institution and can be missing or stale.",
+          ],
+        },
+      };
+    },
+  },
+  {
     name: "get_spending_summary",
     description: "Monthly income, spending by type (essential, discretionary, unclassified, debt payments, fees), surplus, top spending categories, recurring charges totals, and pre-calculated savings scenarios.",
     source: "Your spending analysis",
@@ -132,6 +239,8 @@ export const ADVISOR_TOOLS: AdvisorTool[] = [
           progressPercent: x.progressPercent, remaining: x.remaining, monthlyGoal: x.monthlyContributionGoal, targetDate: x.targetDate,
           estimatedCompletion: x.estimatedCompletion, requiredMonthlyForTargetDate: x.requiredMonthly,
           fundedFrom: Array.from(new Set(x.allocations.map((a) => a.assetClass))), warningCount: x.warnings.length,
+          investmentDetailsAvailable: ctx.prefs.useAccounts,
+          allocations: ctx.prefs.useAccounts ? x.allocations.map((a) => summarizePoolAllocation(a, true)) : null,
         })),
         unassignedByType: p.unallocated,
       };
@@ -144,11 +253,20 @@ export const ADVISOR_TOOLS: AdvisorTool[] = [
     needs: ["poolsGoals"],
     inputSchema: { type: "object", properties: {} },
     run: async (ctx) => {
-      const g = await goals(ctx);
+      const [g, p] = await Promise.all([goals(ctx), pools(ctx)]);
       return {
         goals: g.goals.filter((x) => x.status !== "archived").map((x) => ({
           name: x.name, type: x.type, status: x.status, deadline: x.deadline, monthlyContribution: x.monthlyContribution,
           assumedAnnualReturnPercent: x.annualReturnPercent, ...x.projection, assumptions: x.assumptions, warnings: x.warnings,
+          linkedPools: x.linkedPools.map((linkedPool) => {
+            const pool = p.pools.find((candidate) => candidate.id === linkedPool.id);
+            return {
+              name: linkedPool.name,
+              verifiedAmount: linkedPool.verifiedTotal,
+              investmentDetailsAvailable: ctx.prefs.useAccounts,
+              allocations: ctx.prefs.useAccounts ? pool?.allocations.map((a) => summarizePoolAllocation(a, true)) ?? [] : null,
+            };
+          }),
         })),
       };
     },

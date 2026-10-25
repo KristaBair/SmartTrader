@@ -102,6 +102,64 @@ export interface ManualCashLine {
   overlapsLinked: boolean;
 }
 
+export interface InvestmentAccountPosition {
+  accountKey: string;
+  itemId: string;
+  institutionName: string;
+  accountName: string;
+  accountMask: string | null;
+  accountClass: AssetClass;
+  accountType: string;
+  accountSubtype: string | null;
+  shares: number;
+  marketValue: number | null;
+  costBasis: number | null;
+  currency: string | null;
+  reportedPrice: number | null;
+  priceAsOf: string | null;
+  retrievedAt: string;
+  stalePrice: boolean;
+}
+
+export interface ManualInvestmentEntry {
+  name: string;
+  shares: number;
+  currentPrice: number | null;
+  marketValue: number | null;
+  priceAsOf: string | null;
+  status: ManualStatus;
+}
+
+export type SecurityCategory =
+  | "cash-equivalent"
+  | "stock"
+  | "etf"
+  | "mutual-fund"
+  | "bond"
+  | "other"
+  | "unknown";
+
+// Securities are grouped by their stable Plaid security key, with individual
+// account positions preserved below. Manual entries remain identifiable and
+// are counted only when the user's reconciliation choice allows it.
+export interface ConsolidatedInvestmentPosition {
+  id: string;
+  symbol: string | null;
+  name: string;
+  securityType: string | null;
+  securityCategory: SecurityCategory;
+  isCashEquivalent: boolean;
+  currency: string | null;
+  shares: number;
+  marketValue: number | null;
+  valueComplete: boolean;
+  costBasis: number | null;
+  costBasisComplete: boolean;
+  source: "linked" | "manual" | "mixed";
+  linkedPositions: InvestmentAccountPosition[];
+  manualEntries: ManualInvestmentEntry[];
+}
+
 export const manualLiabilitySchema = z.object({
   name: z.string().trim().min(1).max(80),
   kind: z.enum(["credit-card", "student-loan", "auto-loan", "mortgage", "personal-loan", "medical", "other"]),
@@ -156,6 +214,7 @@ export interface FinancialOverview {
   institutions: InstitutionSummary[];
   accounts: LinkedAccount[];
   holdings: LinkedHolding[];
+  investmentPositions: ConsolidatedInvestmentPosition[];
   manualHoldings: ManualHoldingLine[];
   manualCash: ManualCashLine | null;
   manualLiabilities: ManualLiability[];

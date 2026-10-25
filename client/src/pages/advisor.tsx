@@ -137,7 +137,7 @@ export default function AdvisorPage() {
         <fieldset className="rounded-lg border border-slate-200 bg-white p-3">
           <legend className="px-1 text-xs font-medium text-slate-600">What the AI Advisor may use</legend>
           <div className="flex flex-wrap gap-x-6 gap-y-2">
-            {([["useAccounts", "Account balances"], ["useSpending", "Spending and income"], ["usePoolsAndGoals", "Savings pools and goals"]] as const).map(([key, label]) => (
+            {([["useAccounts", "Account balances and investment holdings"], ["useSpending", "Spending and income"], ["usePoolsAndGoals", "Savings pools and goals"]] as const).map(([key, label]) => (
               <div key={key} className="flex items-center gap-2">
                 <Switch id={`pref-${key}`} checked={prefs[key]} onCheckedChange={(v) => setPref(key, v)} />
                 <Label htmlFor={`pref-${key}`} className="text-sm">{label}</Label>

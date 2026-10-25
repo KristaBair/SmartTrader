@@ -50,6 +50,8 @@ export default function SignIn() {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   // Reset flow: false = ask for email, true = enter code + new password
   const [resetCodeSent, setResetCodeSent] = useState(false);
+  // True once we've sent a replacement sign-up code, which cancels any earlier code.
+  const [codeResent, setCodeResent] = useState(false);
 
   function goTo(next: View) {
     setView(next);
@@ -57,6 +59,7 @@ export default function SignIn() {
     setConfirmPassword("");
     setCode("");
     setResetCodeSent(false);
+    setCodeResent(false);
   }
 
   // Wraps each Cognito call with a busy state and an error toast.
@@ -86,6 +89,8 @@ export default function SignIn() {
       const result = await signIn({ username: email.trim(), password });
       if (result.nextStep.signInStep === "CONFIRM_SIGN_UP") {
         await resendSignUpCode({ username: email.trim() });
+        setCode("");
+        setCodeResent(true);
         setView("confirm");
         return;
       }
@@ -120,6 +125,7 @@ export default function SignIn() {
           },
         },
       });
+      setCodeResent(false);
       setView("confirm");
     });
   }
@@ -129,17 +135,36 @@ export default function SignIn() {
   function handleConfirm(e: FormEvent) {
     e.preventDefault();
     run("Verification failed", async () => {
-      await confirmSignUp({ username: email.trim(), confirmationCode: code.trim() });
-      if (password) {
+      try {
+        await confirmSignUp({ username: email.trim(), confirmationCode: code.trim() });
+      } catch (error) {
+        // A repeat submit after an earlier success: the email is verified, so move on.
+        if (!errorMessage(error).includes("Current status is CONFIRMED")) throw error;
+      }
+      if (!password) {
+        toast({ title: "Email verified", description: "You can sign in now." });
+        goTo("sign-in");
+        return;
+      }
+      // The code was accepted. Sign-in problems from here on are reported separately
+      // so they aren't mistaken for a bad code.
+      try {
         // We still have the password from this visit, so sign straight in.
-        await signIn({ username: email.trim(), password });
+        const result = await signIn({ username: email.trim(), password });
+        if (!result.isSignedIn) {
+          throw new Error("Additional sign-in steps are required but not supported here.");
+        }
         if (agreedToTerms) {
           // Best effort: if this fails, the acceptance screen asks again after sign-in.
           await acceptTerms().catch(() => undefined);
         }
         await finishSignIn();
-      } else {
-        toast({ title: "Email verified", description: "You can sign in now." });
+      } catch (error) {
+        toast({
+          title: "Email verified, but we couldn't sign you in",
+          description: `${errorMessage(error)} Please sign in with your email and password.`,
+          variant: "destructive",
+        });
         goTo("sign-in");
       }
     });
@@ -148,7 +173,9 @@ export default function SignIn() {
   function handleResendCode() {
     run("Couldn't resend code", async () => {
       await resendSignUpCode({ username: email.trim() });
-      toast({ title: "Code sent", description: `Check ${email.trim()} for a new code.` });
+      setCode("");
+      setCodeResent(true);
+      toast({ title: "Code sent", description: `Check ${email.trim()} for a new code. Earlier codes no longer work.` });
     });
   }
 
@@ -338,7 +365,11 @@ export default function SignIn() {
             <CardTitle className="text-white text-lg flex items-center gap-2">
               <MailCheck className="h-5 w-5" /> Check your email
             </CardTitle>
-            <p className="text-slate-400 text-sm">Enter the 6-digit code we sent to {email.trim()}.</p>
+            <p className="text-slate-400 text-sm">
+              {codeResent
+                ? `We just sent a new code to ${email.trim()}. Use the code from the newest email; earlier codes no longer work.`
+                : `Enter the 6-digit code we sent to ${email.trim()}.`}
+            </p>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleConfirm} className="space-y-4">

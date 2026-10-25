@@ -27,6 +27,7 @@ import {
   type ManualLiability,
   type ReconciliationDecisions,
 } from "@shared/finance";
+import { buildInvestmentPortfolio } from "./investmentPortfolio";
 
 export interface ManualPortfolioInput {
   cash: number;
@@ -130,6 +131,11 @@ export function buildFinancialOverview(input: OverviewInput): FinancialOverview 
       price: quote?.price ?? null, priceAsOf: quote?.asOf ?? null, value, status, overlapsLinked,
     };
   });
+  const investmentPositions = buildInvestmentPortfolio({
+    accounts: input.accounts,
+    holdings: input.holdings,
+    manualHoldings,
+  });
   for (const line of manualHoldings) {
     if (line.status !== "counted" || line.value === null) continue;
     totals.assets += line.value;
@@ -204,6 +210,7 @@ export function buildFinancialOverview(input: OverviewInput): FinancialOverview 
     institutions: input.institutions,
     accounts: input.accounts,
     holdings: input.holdings,
+    investmentPositions,
     manualHoldings,
     manualCash,
     manualLiabilities: input.manualLiabilities,

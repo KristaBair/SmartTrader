@@ -12,6 +12,7 @@ import { getOnboarding, hasAcceptedCurrentTerms } from "@/lib/userData";
 import SignIn from "@/pages/sign-in";
 import Dashboard from "@/pages/dashboard";
 import FinancesPage from "@/pages/finances";
+import PoolsPage from "@/pages/pools";
 import AppShell from "@/components/app-shell";
 import { Onboarding } from "@/pages/onboarding";
 import MarketIntelligence from "@/pages/market-intelligence";
@@ -67,6 +68,7 @@ function Router() {
         <Route path="/" component={hasOnboarded ? FinancesPage : Onboarding} />
         <Route path="/onboarding" component={Onboarding} />
         <Route path="/finances" component={FinancesPage} />
+        <Route path="/pools" component={PoolsPage} />
         <Route path="/investments" component={Dashboard} />
         {/* Older links and bookmarks */}
         <Route path="/dashboard" component={Dashboard} />

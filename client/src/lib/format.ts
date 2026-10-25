@@ -1,4 +1,18 @@
+import type { AssetClass } from "@shared/finance";
+
 // Display helpers shared by the finance pages.
+
+export const CLASS_LABELS: Record<AssetClass, string> = {
+  cash: "Cash",
+  savings: "Savings",
+  "term-deposit": "CD / term deposit",
+  "taxable-investment": "Taxable investment",
+  retirement: "Retirement",
+  restricted: "Restricted (HSA, 529…)",
+  credit: "Credit",
+  loan: "Loan",
+  other: "Other",
+};
 
 export function usd(value: number | null | undefined, options: { cents?: boolean } = {}): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";

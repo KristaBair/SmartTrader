@@ -14,19 +14,9 @@ import ManualDebts from "@/components/manual-debts";
 import PlaidAccountsPanel from "@/components/plaid-accounts";
 import SpendingAnalysisPanel from "@/components/spending-analysis";
 import { dateTime, errorMessage, shortDate, usd } from "@/lib/format";
-import type { AssetClass, FinancialOverview, LinkedAccount } from "@shared/finance";
+import { CLASS_LABELS } from "@/lib/format";
+import type { FinancialOverview, LinkedAccount } from "@shared/finance";
 
-export const CLASS_LABELS: Record<AssetClass, string> = {
-  cash: "Cash",
-  savings: "Savings",
-  "term-deposit": "CD / term deposit",
-  "taxable-investment": "Taxable investment",
-  retirement: "Retirement",
-  restricted: "Restricted (HSA, 529…)",
-  credit: "Credit",
-  loan: "Loan",
-  other: "Other",
-};
 
 function Tile({ label, value, sub, tone = "default" }: { label: string; value: string; sub?: string; tone?: "default" | "good" | "bad" }) {
   const color = tone === "good" ? "text-emerald-700" : tone === "bad" ? "text-rose-700" : "text-slate-900";

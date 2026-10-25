@@ -2,8 +2,9 @@
 // Bump TERMS_VERSION whenever the text changes in a way users must re-accept;
 // every signed-in user with an older acceptance is asked to agree again.
 
-export const TERMS_VERSION = "2026-10-22";
-export const TERMS_EFFECTIVE_DATE = "October 22, 2026";
+// DRAFT pending legal review: 2026-10-25 adds savings pools, goals, planners, and the AI Advisor.
+export const TERMS_VERSION = "2026-10-25";
+export const TERMS_EFFECTIVE_DATE = "October 25, 2026";
 export const SERVICE_NAME = "InvestSmart";
 export const TERMS_CONTACT = "krista@kristaswebsites.com";
 
@@ -45,6 +46,8 @@ export const TERMS_SECTIONS: TermsSection[] = [
       [
         "Recommendations, signals, projections, suggested contributions, and spending estimates are informational. They do not consider all of your circumstances, such as unlinked accounts, debts, upcoming expenses, taxes, or goals you have not told us about.",
         "The Service never places trades or moves money. Any decision to buy, sell, save, or spend is yours alone.",
+        "Savings pools are labels you put on money you already have. Creating, changing, or deleting a pool never moves money, sells investments, or changes any account, and pools are not added to your net worth.",
+        "Financial goals and the emergency fund, rent affordability, and retirement planners are estimates calculated from the information and assumptions shown. They are not guarantees that any amount is affordable or that any goal will be reached.",
         "Investing involves risk, including the loss of principal. Past performance and simulated results do not guarantee future results.",
         "Consider speaking with a qualified, licensed professional before making financial decisions.",
       ],
@@ -54,11 +57,12 @@ export const TERMS_SECTIONS: TermsSection[] = [
     id: "ai",
     title: "4. AI-generated analysis",
     blocks: [
-      "The Service uses Anthropic's Claude models, provided through Amazon Bedrock, to generate portfolio analysis, investment suggestions, pattern analysis, chat responses, and to read portfolio screenshots you upload.",
+      "The Service uses Anthropic's Claude models, provided through Amazon Bedrock, to generate portfolio analysis, investment suggestions, pattern analysis, chat responses, and to read portfolio screenshots you upload. The AI Advisor uses Claude to answer planning questions from the results of the Service's own calculations about your data.",
       [
         "AI output can be incomplete, out of date, or wrong, even when it sounds confident. Verify important information independently.",
         "Target prices, expected returns, and confidence ratings are the model's own estimates, not facts or statistical probabilities of profit.",
         "We supply the model with verified market quotes where available and remove any price the model states that we could not verify, but we cannot guarantee the accuracy of every statement it makes.",
+        "The AI Advisor marks figures that don't match the Service's calculations as not verified and does not recommend buying or selling specific investments. AI Advisor conversations are not stored.",
       ],
     ],
   },
@@ -94,6 +98,7 @@ export const TERMS_SECTIONS: TermsSection[] = [
         "From connected bank accounts: a summary calculated on our servers, consisting of average monthly income, expenses, and surplus, a suggested monthly contribution, and average monthly spending in your top categories.",
         "Portfolio screenshots you choose to upload.",
       ],
+      "When you ask the AI Advisor a question, it may also receive, for the kinds of data you allow in its settings: your net worth and total balances by account type; debts you entered (type, balance, payment, and rate); spending and income totals by type and category, recurring-charge totals, and savings estimates; your savings pools and goals (names, targets, amounts, and projections); and results of the emergency fund, rent, and retirement planners. You can turn each kind of data off in the AI Advisor settings.",
       "The following are never sent to the AI model: full account numbers, Plaid access credentials, institution login details, institution names, merchant names, or individual bank transactions.",
       "Amazon Web Services processes these requests as our service provider. Under AWS's terms for Amazon Bedrock, your prompts and the model's responses are not used to train the underlying models. If you do not want connected-account information included in AI analysis, disconnect those accounts.",
     ],
@@ -106,9 +111,10 @@ export const TERMS_SECTIONS: TermsSection[] = [
       [
         "Amazon Cognito stores your name, email address, and password credentials.",
         "Amazon DynamoDB stores your portfolio, onboarding answers, most recent recommendations, your acceptance of these Terms, and an encrypted Plaid access token for each connected account.",
+        "Amazon DynamoDB also stores what you create in the planning features: savings pools and their allocation records (a reference to the account or holding, its display name and last four digits, the amount or number of shares, and a history of changes); financial goals; debts you enter; your choices about whether manual entries duplicate linked accounts; spending categories you change, including the names of merchants you reclassify; expenses and take-home pay you enter; and your AI Advisor settings.",
         "Amazon S3 stores portfolio screenshots you upload.",
       ],
-      "Plaid access tokens are encrypted with AES-256-GCM before they are stored. Balances, holdings, and transactions from connected accounts are retrieved from Plaid when you view or analyze them. They are not saved in our database, and raw bank transactions are not stored. Communication with the Service is encrypted in transit. No system is perfectly secure, and we cannot guarantee absolute security.",
+      "Plaid access tokens are encrypted with AES-256-GCM before they are stored. Balances, holdings, and transactions from connected accounts are retrieved from Plaid when you view or analyze them. They are not saved in our database, and raw bank transactions are not stored. To avoid repeated requests, recently retrieved data may be kept in our server's memory for up to 30 seconds. Communication with the Service is encrypted in transit. No system is perfectly secure, and we cannot guarantee absolute security.",
     ],
   },
   {
@@ -131,6 +137,8 @@ export const TERMS_SECTIONS: TermsSection[] = [
       [
         "Disconnect any linked account at any time from the dashboard.",
         "Reset your saved portfolio, onboarding answers, and recommendations from the dashboard.",
+        "Edit or delete savings pools, goals, debts you entered, and spending categories at any time.",
+        "Choose which kinds of data the AI Advisor may use, in its settings.",
         `To close your account and delete your stored information, contact us at ${TERMS_CONTACT}. We will delete it except where we must keep records to meet a legal obligation.`,
       ],
     ],

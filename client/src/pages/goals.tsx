@@ -11,6 +11,8 @@ import GoalCard from "@/components/goal-card";
 import GoalEditor from "@/components/goal-editor";
 import { errorMessage } from "@/lib/format";
 import EmergencyPlanner from "@/components/emergency-planner";
+import RentPlanner from "@/components/rent-planner";
+import RetirementPlanner from "@/components/retirement-planner";
 import type { Goal, GoalsResponse } from "@shared/goals";
 
 export interface PlannerTab {
@@ -67,6 +69,8 @@ function GoalsList() {
 // Each planner is a self-contained component.
 export const PLANNER_TABS: PlannerTab[] = [
   { value: "emergency", label: "Emergency fund", content: <EmergencyPlanner /> },
+  { value: "rent", label: "Rent affordability", content: <RentPlanner /> },
+  { value: "retirement", label: "Retirement", content: <RetirementPlanner /> },
 ];
 
 export default function GoalsPage() {

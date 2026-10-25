@@ -42,6 +42,7 @@ import {
 import { TERMS_VERSION } from "@shared/terms";
 import { findOverlappingSymbols } from "./services/holdingsReconciliation";
 import { registerFinanceRoutes } from "./financeRoutes";
+import { registerPoolRoutes } from "./poolRoutes";
 
 interface TradingSignal {
   ticker: string;
@@ -339,8 +340,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Could not verify Terms acceptance" });
     }
   };
-  app.use(["/api/plaid", "/api/spending", "/api/portfolios/analyze-direct", "/api/finances"], requireCurrentTerms);
+  app.use(["/api/plaid", "/api/spending", "/api/portfolios/analyze-direct", "/api/finances", "/api/pools"], requireCurrentTerms);
   registerFinanceRoutes(app);
+  registerPoolRoutes(app);
 
   app.put("/api/me/terms", async (req, res) => {
     const body = z.object({ version: z.literal(TERMS_VERSION) }).safeParse(req.body);

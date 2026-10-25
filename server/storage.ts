@@ -8,6 +8,9 @@
 //   USER#<cognitoSub>  PLAID#<itemId>     StoredPlaidItem
 //   USER#<cognitoSub>  RECONCILIATION     ReconciliationDecisions (manual vs. linked)
 //   USER#<cognitoSub>  LIABILITY#<id>     ManualLiability
+//   USER#<cognitoSub>  POOL#<id>          Pool (savings pool definition)
+//   USER#<cognitoSub>  POOL_LEDGER        AllocationLedger: every allocation + a version
+//   USER#<cognitoSub>  POOLHIST#<poolId>#<iso time>#<id>   AllocationHistoryEntry
 //   MARKET#<symbol>    QUOTE              Legacy placeholder quotes; no longer read or written
 //
 // Every user item is keyed by the Cognito `sub` taken from a verified token, so one
@@ -19,6 +22,7 @@ import {
   GetCommand,
   PutCommand,
   QueryCommand,
+  TransactWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import { awsConfig, dynamo } from "./aws";
 import type {
@@ -29,6 +33,7 @@ import type {
   UserData,
 } from "@shared/schema";
 import { reconciliationSchema, type ManualLiability, type ReconciliationDecisions } from "@shared/finance";
+import type { AllocationHistoryEntry, AllocationLedger, Pool } from "@shared/pools";
 
 const TableName = awsConfig.tableName;
 
@@ -72,6 +77,23 @@ async function queryUserPrefix(userId: string, prefix: string): Promise<Record<s
     ExclusiveStartKey = result.LastEvaluatedKey;
   } while (ExclusiveStartKey);
   return items;
+}
+
+// Thrown when the pool ledger changed between read and write (another tab or
+// request got there first). The caller reloads and retries or reports a conflict.
+export class LedgerConflictError extends Error {
+  constructor() {
+    super("Your savings pools changed in another window. Reload and try again.");
+  }
+}
+
+export interface PoolChange {
+  // Ledger version read before the change; the write fails if it has moved on.
+  expectedVersion: number;
+  allocations: AllocationLedger["allocations"];
+  putPools?: Pool[];
+  deletePoolIds?: string[];
+  history: AllocationHistoryEntry[];
 }
 
 export class DynamoStorage {
@@ -195,6 +217,88 @@ export class DynamoStorage {
       new DeleteCommand({ TableName, Key: { PK: userPk(userId), SK: `LIABILITY#${id}` }, ReturnValues: "ALL_OLD" })
     );
     return Boolean(result.Attributes);
+  }
+
+  // ── Savings pools ────────────────────────────────────────────────────────
+
+  async getPools(userId: string): Promise<Pool[]> {
+    const items = await queryUserPrefix(userId, "POOL#");
+    return items.map((item) => item.data as Pool).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async getLedger(userId: string): Promise<AllocationLedger> {
+    const result = await dynamo.send(
+      new GetCommand({ TableName, Key: { PK: userPk(userId), SK: "POOL_LEDGER" }, ConsistentRead: true })
+    );
+    if (!result.Item) return { version: 0, allocations: [] };
+    return { version: Number(result.Item.version) || 0, allocations: (result.Item.data as AllocationLedger["allocations"]) ?? [] };
+  }
+
+  // Writes a pool change atomically: the ledger (guarded by its version), any
+  // pool definitions, and history entries all succeed or none do.
+  async commitPoolChange(userId: string, change: PoolChange): Promise<number> {
+    const nextVersion = change.expectedVersion + 1;
+    const now = new Date().toISOString();
+    const transactItems: NonNullable<ConstructorParameters<typeof TransactWriteCommand>[0]["TransactItems"]> = [
+      {
+        Put: {
+          TableName,
+          Item: { PK: userPk(userId), SK: "POOL_LEDGER", version: nextVersion, data: change.allocations, updatedAt: now },
+          ConditionExpression: change.expectedVersion === 0 ? "attribute_not_exists(PK) OR version = :v" : "version = :v",
+          ExpressionAttributeValues: { ":v": change.expectedVersion },
+        },
+      },
+      ...(change.putPools ?? []).map((pool) => ({
+        Put: { TableName, Item: { PK: userPk(userId), SK: `POOL#${pool.id}`, data: pool, updatedAt: pool.updatedAt } },
+      })),
+      ...(change.deletePoolIds ?? []).map((id) => ({
+        Delete: { TableName, Key: { PK: userPk(userId), SK: `POOL#${id}` } },
+      })),
+      ...change.history.map((entry) => ({
+        Put: {
+          TableName,
+          Item: { PK: userPk(userId), SK: `POOLHIST#${entry.poolId}#${entry.at}#${entry.id}`, data: entry, updatedAt: entry.at },
+        },
+      })),
+    ];
+    if (transactItems.length > 100) throw new Error("Too many changes in one request.");
+    try {
+      await dynamo.send(new TransactWriteCommand({ TransactItems: transactItems }));
+    } catch (error) {
+      const reasons = (error as { CancellationReasons?: { Code?: string }[] }).CancellationReasons;
+      if ((error as Error).name === "TransactionCanceledException" && reasons?.[0]?.Code === "ConditionalCheckFailed") {
+        throw new LedgerConflictError();
+      }
+      throw error;
+    }
+    return nextVersion;
+  }
+
+  async getPoolHistory(userId: string, poolId: string, limit = 100): Promise<AllocationHistoryEntry[]> {
+    const result = await dynamo.send(
+      new QueryCommand({
+        TableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+        ExpressionAttributeValues: { ":pk": userPk(userId), ":prefix": `POOLHIST#${poolId}#` },
+        ScanIndexForward: false,
+        Limit: limit,
+      })
+    );
+    return (result.Items ?? []).map((item) => item.data as AllocationHistoryEntry);
+  }
+
+  // Used when a pool is deleted outright. Best effort, in batches of 25.
+  async deletePoolHistory(userId: string, poolId: string): Promise<void> {
+    const items = await queryUserPrefix(userId, `POOLHIST#${poolId}#`);
+    for (let i = 0; i < items.length; i += 25) {
+      await dynamo.send(
+        new BatchWriteCommand({
+          RequestItems: {
+            [TableName]: items.slice(i, i + 25).map((item) => ({ DeleteRequest: { Key: { PK: item.PK, SK: item.SK } } })),
+          },
+        })
+      );
+    }
   }
 
   // Removes portfolio, onboarding, and recommendations (the "reset" button).

@@ -22,7 +22,7 @@ The account must be able to invoke the model in `BedrockModelId` (default
 `us.anthropic.claude-sonnet-4-6`). Confirm the profile exists in your region:
 
 ```bash
-aws bedrock list-inference-profiles --region us-east-1 \
+aws bedrock list-inference-profiles --region us-east-2 \
   --query "inferenceProfileSummaries[?contains(inferenceProfileId, 'claude')].inferenceProfileId"
 ```
 
@@ -36,9 +36,9 @@ aws cloudformation deploy \
   --stack-name smarttrader \
   --template-file infra/smarttrader.yaml \
   --capabilities CAPABILITY_NAMED_IAM \
-  --region us-east-1
+  --region us-east-2
 
-aws cloudformation describe-stacks --stack-name smarttrader --region us-east-1 \
+aws cloudformation describe-stacks --stack-name smarttrader --region us-east-2 \
   --query "Stacks[0].Outputs" --output table
 ```
 

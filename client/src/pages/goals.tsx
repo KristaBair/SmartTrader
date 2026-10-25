@@ -10,6 +10,7 @@ import { AlertTriangle, Plus, Target } from "lucide-react";
 import GoalCard from "@/components/goal-card";
 import GoalEditor from "@/components/goal-editor";
 import { errorMessage } from "@/lib/format";
+import EmergencyPlanner from "@/components/emergency-planner";
 import type { Goal, GoalsResponse } from "@shared/goals";
 
 export interface PlannerTab {
@@ -63,8 +64,10 @@ function GoalsList() {
   );
 }
 
-// Planner tabs are added by later stages; each is a self-contained component.
-export const PLANNER_TABS: PlannerTab[] = [];
+// Each planner is a self-contained component.
+export const PLANNER_TABS: PlannerTab[] = [
+  { value: "emergency", label: "Emergency fund", content: <EmergencyPlanner /> },
+];
 
 export default function GoalsPage() {
   return (

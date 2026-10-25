@@ -17,21 +17,25 @@ import {
 } from "@shared/finance";
 import { buildFinancialOverview, type VerifiedPrice } from "./services/finance/overview";
 import {
+  loadBankTransactions,
   loadLinkedFinancialData,
-  loadSpendingAnalysis,
   logPlaidFailure,
   SpendingAnalysisError,
 } from "./services/finance/plaidData";
+import { buildSpendingInsights } from "./services/finance/cashflow";
+import type { StoredPlaidItem } from "./storage";
+import type { SpendingInsights, SpendingPrefs } from "@shared/cashflow";
 
 // Everything the overview needs, loaded in parallel. Also used by savings pools,
 // goals, and planners so they all work from the same reconciled numbers.
 export async function loadFinancialOverview(userId: string): Promise<FinancialOverview> {
-  const [linked, userData, decisions, manualLiabilities, plaidItems] = await Promise.all([
+  const [linked, userData, decisions, manualLiabilities, plaidItems, prefs] = await Promise.all([
     loadLinkedFinancialData(userId),
     storage.getUserData(userId),
     storage.getReconciliation(userId),
     storage.getManualLiabilities(userId),
     storage.getPlaidItems(userId),
+    storage.getSpendingPrefs(userId),
   ]);
 
   const portfolio = userData.portfolio;
@@ -43,32 +47,17 @@ export async function loadFinancialOverview(userId: string): Promise<FinancialOv
   }
 
   const extraNotices: DataNotice[] = [];
-  let cashFlow: CashFlowSummary | null = null;
-  if (linked.plaidConfigured && plaidItems.some((item) => (item.products || []).includes("transactions"))) {
-    try {
-      const { analysis } = await loadSpendingAnalysis(userId);
-      cashFlow = {
-        periodStart: analysis.periodStart,
-        periodEnd: analysis.periodEnd,
-        monthlyIncome: analysis.monthlyIncome,
-        monthlyExpenses: analysis.monthlyExpenses,
-        monthlySurplus: analysis.monthlySurplus,
-      };
-    } catch (error) {
-      if (!(error instanceof SpendingAnalysisError)) logPlaidFailure("overview-cash-flow", error);
-      extraNotices.push({
-        level: "warning",
-        code: "CASH_FLOW_UNAVAILABLE",
-        message: error instanceof SpendingAnalysisError ? error.message : "Income and spending could not be loaded from your bank connection.",
-      });
-    }
-  } else {
-    extraNotices.push({
-      level: "info",
-      code: "CASH_FLOW_NOT_LINKED",
-      message: "Link a bank account for spending to see income, spending, and monthly cash flow.",
-    });
-  }
+  const spending = await loadSpendingInsights(userId, linked.plaidConfigured, plaidItems, prefs);
+  if (spending.notice) extraNotices.push(spending.notice);
+  const cashFlow: CashFlowSummary | null = spending.insights
+    ? {
+        periodStart: spending.insights.periodStart,
+        periodEnd: spending.insights.periodEnd,
+        monthlyIncome: spending.insights.income.usedMonthly,
+        monthlyExpenses: spending.insights.monthly.totalSpending,
+        monthlySurplus: spending.insights.monthly.surplus,
+      }
+    : null;
 
   const overview = buildFinancialOverview({
     generatedAt: new Date().toISOString(),
@@ -85,8 +74,44 @@ export async function loadFinancialOverview(userId: string): Promise<FinancialOv
     cashFlow,
     plaidConfigured: linked.plaidConfigured,
   });
+  overview.spending = spending.insights;
   overview.notices.push(...extraNotices);
   return overview;
+}
+
+// Spending insights from linked bank transactions, or a notice explaining why
+// there are none. Never throws for missing or broken bank connections.
+export async function loadSpendingInsights(
+  userId: string,
+  plaidConfigured: boolean,
+  plaidItems: StoredPlaidItem[],
+  prefs: SpendingPrefs
+): Promise<{ insights: SpendingInsights | null; notice: DataNotice | null }> {
+  if (!plaidConfigured || !plaidItems.some((item) => (item.products || []).includes("transactions"))) {
+    return {
+      insights: null,
+      notice: { level: "info", code: "CASH_FLOW_NOT_LINKED", message: "Link a bank account for spending to see income, spending, and monthly cash flow." },
+    };
+  }
+  try {
+    const set = await loadBankTransactions(userId);
+    const insights = buildSpendingInsights({ transactions: set.transactions, periodStart: set.periodStart, periodEnd: set.periodEnd, prefs });
+    if (!insights) {
+      return { insights: null, notice: { level: "warning", code: "NO_COMPLETED_TRANSACTIONS", message: "Your bank hasn't sent any completed transactions yet. Check back after they post." } };
+    }
+    if (set.excludedCurrencyCount > 0) insights.notices.push(`${set.excludedCurrencyCount} non-USD transactions were left out because no currency conversion is applied.`);
+    return { insights, notice: null };
+  } catch (error) {
+    if (!(error instanceof SpendingAnalysisError)) logPlaidFailure("spending-insights", error);
+    return {
+      insights: null,
+      notice: {
+        level: "warning",
+        code: "CASH_FLOW_UNAVAILABLE",
+        message: error instanceof SpendingAnalysisError ? error.message : "Income and spending could not be loaded from your bank connection.",
+      },
+    };
+  }
 }
 
 export function registerFinanceRoutes(app: Express) {

@@ -12,7 +12,7 @@ import FinanceNotices from "@/components/finance-notices";
 import FinanceReconciliation from "@/components/finance-reconciliation";
 import ManualDebts from "@/components/manual-debts";
 import PlaidAccountsPanel from "@/components/plaid-accounts";
-import SpendingAnalysisPanel from "@/components/spending-analysis";
+import SpendingInsightsPanel from "@/components/spending-insights";
 import { dateTime, errorMessage, shortDate, usd } from "@/lib/format";
 import { CLASS_LABELS } from "@/lib/format";
 import type { FinancialOverview, LinkedAccount } from "@shared/finance";
@@ -195,9 +195,10 @@ export default function FinancesPage() {
         </>
       )}
 
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6" aria-label="Connected accounts">
+      {overview && <SpendingInsightsPanel insights={overview.spending} />}
+
+      <section aria-label="Connected accounts">
         <PlaidAccountsPanel />
-        <SpendingAnalysisPanel />
       </section>
     </main>
   );

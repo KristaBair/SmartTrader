@@ -3,6 +3,7 @@
 // only user-created records (manual debts, reconciliation choices) are saved.
 
 import { z } from "zod";
+import type { SpendingInsights } from "./cashflow";
 
 // How an account's money can be used. Drives net worth, emergency-fund
 // eligibility, and which assets a savings pool may draw on.
@@ -161,5 +162,7 @@ export interface FinancialOverview {
   // The user's saved choices, returned as-is so editing one never drops another.
   decisions: ReconciliationDecisions;
   cashFlow: CashFlowSummary | null;
+  // Full spending breakdown behind cashFlow (categories, recurring charges, scenarios).
+  spending: SpendingInsights | null;
   notices: DataNotice[];
 }

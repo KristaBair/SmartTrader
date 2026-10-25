@@ -64,6 +64,17 @@ export function accountValue(account: LinkedAccount, holdings: LinkedHolding[]):
   return values.reduce<number>((sum, v) => sum + (v as number), 0);
 }
 
+// Rule 4: manual cash is left out once a bank account is linked, until the
+// user says it's separate. Shared with the emergency-fund planner.
+export function manualCashLine(amount: number, accounts: LinkedAccount[], decisions: ReconciliationDecisions): ManualCashLine | null {
+  if (amount <= 0) return null;
+  const hasLinkedCash = accounts.some((a) => a.assetClass === "cash" || a.assetClass === "savings");
+  const status: ManualCashLine["status"] = decisions.cash === "duplicate"
+    ? "duplicate"
+    : hasLinkedCash && decisions.cash !== "separate" ? "needs-review" : "counted";
+  return { amount, status, overlapsLinked: hasLinkedCash };
+}
+
 export function buildFinancialOverview(input: OverviewInput): FinancialOverview {
   const notices: DataNotice[] = [];
   const totals: FinancialTotals = {
@@ -127,16 +138,10 @@ export function buildFinancialOverview(input: OverviewInput): FinancialOverview 
   }
 
   // ── Manual cash ──
-  let manualCash: ManualCashLine | null = null;
-  const manualCashAmount = input.manualPortfolio?.cash ?? 0;
-  if (manualCashAmount > 0) {
-    const hasLinkedCash = input.accounts.some((a) => a.assetClass === "cash" || a.assetClass === "savings");
-    const decision = input.decisions.cash;
-    const status: ManualCashLine["status"] = decision === "duplicate"
-      ? "duplicate"
-      : hasLinkedCash && decision !== "separate" ? "needs-review" : "counted";
-    manualCash = { amount: manualCashAmount, status, overlapsLinked: hasLinkedCash };
-    if (status === "counted") {
+  const manualCash = manualCashLine(input.manualPortfolio?.cash ?? 0, input.accounts, input.decisions);
+  if (manualCash) {
+    const manualCashAmount = manualCash.amount;
+    if (manualCash.status === "counted") {
       totals.assets += manualCashAmount;
       totals.cash += manualCashAmount;
       totals.manualEstimates += manualCashAmount;
@@ -204,6 +209,7 @@ export function buildFinancialOverview(input: OverviewInput): FinancialOverview 
     manualLiabilities: input.manualLiabilities,
     decisions: input.decisions,
     cashFlow: input.cashFlow,
+    spending: null,
     notices,
   };
 }

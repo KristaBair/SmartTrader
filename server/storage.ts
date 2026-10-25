@@ -12,6 +12,7 @@
 //   USER#<cognitoSub>  POOL_LEDGER        AllocationLedger: every allocation + a version
 //   USER#<cognitoSub>  POOLHIST#<poolId>#<iso time>#<id>   AllocationHistoryEntry
 //   USER#<cognitoSub>  GOAL#<id>          Goal
+//   USER#<cognitoSub>  SPENDING_PREFS     SpendingPrefs (classification choices, added expenses)
 //   MARKET#<symbol>    QUOTE              Legacy placeholder quotes; no longer read or written
 //
 // Every user item is keyed by the Cognito `sub` taken from a verified token, so one
@@ -36,10 +37,11 @@ import type {
 import { reconciliationSchema, type ManualLiability, type ReconciliationDecisions } from "@shared/finance";
 import type { AllocationHistoryEntry, AllocationLedger, Pool } from "@shared/pools";
 import type { Goal } from "@shared/goals";
+import { spendingPrefsSchema, type SpendingPrefs } from "@shared/cashflow";
 
 const TableName = awsConfig.tableName;
 
-type UserItemKind = "PORTFOLIO" | "ONBOARDING" | "RECOMMENDATIONS" | "TERMS" | "RECONCILIATION";
+type UserItemKind = "PORTFOLIO" | "ONBOARDING" | "RECOMMENDATIONS" | "TERMS" | "RECONCILIATION" | "SPENDING_PREFS";
 
 const userPk = (userId: string) => `USER#${userId}`;
 
@@ -318,6 +320,18 @@ export class DynamoStorage {
 
   async deleteGoal(userId: string, id: string): Promise<void> {
     await dynamo.send(new DeleteCommand({ TableName, Key: { PK: userPk(userId), SK: `GOAL#${id}` } }));
+  }
+
+  // ── Spending preferences ─────────────────────────────────────────────────
+
+  async getSpendingPrefs(userId: string): Promise<SpendingPrefs> {
+    const result = await dynamo.send(new GetCommand({ TableName, Key: { PK: userPk(userId), SK: "SPENDING_PREFS" } }));
+    const parsed = spendingPrefsSchema.safeParse(result.Item?.data ?? {});
+    return parsed.success ? parsed.data : spendingPrefsSchema.parse({});
+  }
+
+  async saveSpendingPrefs(userId: string, prefs: SpendingPrefs): Promise<void> {
+    await putUserItem(userId, "SPENDING_PREFS", prefs);
   }
 
   // Removes portfolio, onboarding, and recommendations (the "reset" button).

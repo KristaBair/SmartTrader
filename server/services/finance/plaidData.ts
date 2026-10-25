@@ -181,12 +181,21 @@ export async function loadBankTransactions(userId: string, days = 90): Promise<B
     let offset = 0;
     let totalTransactions = Number.POSITIVE_INFINITY;
     while (offset < totalTransactions && offset < MAX_TRANSACTIONS_PER_ITEM) {
-      const response = await client.transactionsGet({
-        access_token: accessToken,
-        start_date: periodStart,
-        end_date: periodEnd,
-        options: { count: 500, offset, account_ids: Array.from(includedAccountIds) },
-      });
+      let response;
+      try {
+        response = await client.transactionsGet({
+          access_token: accessToken,
+          start_date: periodStart,
+          end_date: periodEnd,
+          options: { count: 500, offset, account_ids: Array.from(includedAccountIds), include_personal_finance_category: true },
+        });
+      } catch (error) {
+        // Right after linking, the bank may not have sent any history yet.
+        if (getPlaidErrorDetails(error).code === "PRODUCT_NOT_READY") {
+          throw new SpendingAnalysisError(409, "TRANSACTIONS_NOT_READY", "Your bank is still sending your transaction history. Check back in a few minutes.");
+        }
+        throw error;
+      }
       totalTransactions = response.data.total_transactions;
       for (const transaction of response.data.transactions) {
         if (transaction.iso_currency_code !== "USD") {

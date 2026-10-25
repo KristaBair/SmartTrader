@@ -1,4 +1,6 @@
 export interface SpendingTransactionInput {
+  // YYYY-MM-DD. When present, averages use the period the data actually covers.
+  date?: string;
   amount: number;
   category: string;
   primaryCategory: string;
@@ -38,6 +40,11 @@ export function calculateSpendingAnalysis(
   periodStart: string,
   periodEnd: string
 ): SpendingAnalysisSummary {
+  // A new bank connection may return less history than requested; measure from
+  // the earliest completed transaction so monthly averages aren't understated.
+  const datedCompleted = transactions.filter((t) => !t.pending && t.date).map((t) => t.date!);
+  const earliest = datedCompleted.length > 0 ? datedCompleted.reduce((a, b) => (a < b ? a : b)) : null;
+  if (earliest && earliest > periodStart) periodStart = earliest;
   const start = new Date(`${periodStart}T00:00:00.000Z`).getTime();
   const end = new Date(`${periodEnd}T00:00:00.000Z`).getTime();
   const daysAnalyzed = Math.max(1, Math.floor((end - start) / 86_400_000) + 1);

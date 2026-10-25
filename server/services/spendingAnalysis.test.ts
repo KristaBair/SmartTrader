@@ -40,3 +40,13 @@ test("excludes pending and transfer activity and calculates cutback options", ()
     { cutPercent: 30, monthlySavings: 90, suggestedContributionAfterCut: 1_395 },
   ]);
 });
+
+test("measures from the earliest transaction when less history came back", () => {
+  const result = calculateSpendingAnalysis([
+    { date: "2026-03-02", amount: 300, category: "DINING", primaryCategory: "FOOD_AND_DRINK", pending: false },
+    { date: "2026-03-31", amount: 300, category: "DINING", primaryCategory: "FOOD_AND_DRINK", pending: false },
+  ], "2026-01-01", "2026-03-31");
+  assert.equal(result.periodStart, "2026-03-02");
+  assert.equal(result.daysAnalyzed, 30);
+  assert.equal(result.monthlyExpenses, 600);
+});

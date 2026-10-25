@@ -74,9 +74,10 @@ function linkedNotices(linked: LinkedFinancialData): DataNotice[] {
   return notices;
 }
 
-async function buildPoolsResponse(userId: string): Promise<PoolsResponse> {
+// Pass `preloaded` to reuse linked data already fetched for the same request.
+export async function buildPoolsResponse(userId: string, preloaded?: LinkedFinancialData): Promise<PoolsResponse> {
   const [linked, pools, ledger] = await Promise.all([
-    loadLinkedFinancialData(userId),
+    preloaded ?? loadLinkedFinancialData(userId),
     storage.getPools(userId),
     storage.getLedger(userId),
   ]);

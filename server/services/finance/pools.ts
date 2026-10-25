@@ -30,6 +30,9 @@ import type {
   UnallocatedByClass,
 } from "@shared/pools";
 import { accountValue } from "./overview";
+import { addMonths, monthsUntil } from "./projections";
+
+export { monthsUntil };
 
 export interface PriceQuote {
   price: number;
@@ -193,22 +196,6 @@ export function validateAllocations(
     }
   }
   return Array.from(new Set(errors));
-}
-
-function addMonths(from: Date, months: number): string {
-  const d = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
-  d.setUTCMonth(d.getUTCMonth() + months);
-  const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
-  d.setUTCDate(Math.min(from.getUTCDate(), lastDay));
-  return d.toISOString().slice(0, 10);
-}
-
-// Whole months from `now` until `date` (a YYYY-MM-DD string), at least 0.
-export function monthsUntil(now: Date, date: string): number {
-  const target = new Date(`${date}T00:00:00Z`);
-  let months = (target.getUTCFullYear() - now.getUTCFullYear()) * 12 + (target.getUTCMonth() - now.getUTCMonth());
-  if (target.getUTCDate() < now.getUTCDate()) months -= 1;
-  return Math.max(0, months);
 }
 
 // Months and date to cover `remaining` at `monthly` per month, with no growth.

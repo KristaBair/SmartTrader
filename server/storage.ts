@@ -11,6 +11,7 @@
 //   USER#<cognitoSub>  POOL#<id>          Pool (savings pool definition)
 //   USER#<cognitoSub>  POOL_LEDGER        AllocationLedger: every allocation + a version
 //   USER#<cognitoSub>  POOLHIST#<poolId>#<iso time>#<id>   AllocationHistoryEntry
+//   USER#<cognitoSub>  GOAL#<id>          Goal
 //   MARKET#<symbol>    QUOTE              Legacy placeholder quotes; no longer read or written
 //
 // Every user item is keyed by the Cognito `sub` taken from a verified token, so one
@@ -34,6 +35,7 @@ import type {
 } from "@shared/schema";
 import { reconciliationSchema, type ManualLiability, type ReconciliationDecisions } from "@shared/finance";
 import type { AllocationHistoryEntry, AllocationLedger, Pool } from "@shared/pools";
+import type { Goal } from "@shared/goals";
 
 const TableName = awsConfig.tableName;
 
@@ -299,6 +301,23 @@ export class DynamoStorage {
         })
       );
     }
+  }
+
+  // ── Financial goals ──────────────────────────────────────────────────────
+
+  async getGoals(userId: string): Promise<Goal[]> {
+    const items = await queryUserPrefix(userId, "GOAL#");
+    return items.map((item) => item.data as Goal).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async saveGoal(userId: string, goal: Goal): Promise<void> {
+    await dynamo.send(
+      new PutCommand({ TableName, Item: { PK: userPk(userId), SK: `GOAL#${goal.id}`, data: goal, updatedAt: goal.updatedAt } })
+    );
+  }
+
+  async deleteGoal(userId: string, id: string): Promise<void> {
+    await dynamo.send(new DeleteCommand({ TableName, Key: { PK: userPk(userId), SK: `GOAL#${id}` } }));
   }
 
   // Removes portfolio, onboarding, and recommendations (the "reset" button).

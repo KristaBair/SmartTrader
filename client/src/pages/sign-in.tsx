@@ -75,7 +75,7 @@ export default function SignIn() {
   // Loads the user and their saved data, then picks the right landing page.
   async function finishSignIn() {
     await refreshUser();
-    navigate(getOnboarding()?.completed ? "/dashboard" : "/onboarding");
+    navigate(getOnboarding()?.completed ? "/finances" : "/onboarding");
   }
 
   // ── Sign in ──────────────────────────────────────────────────────────────

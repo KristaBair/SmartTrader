@@ -59,7 +59,7 @@ export function Onboarding() {
       suggestions: null,
       completedAt: new Date().toISOString(),
     });
-    navigate("/dashboard");
+    navigate("/finances");
   };
 
   const handleSavingsChoice = () => {
@@ -183,7 +183,7 @@ export function Onboarding() {
         description: `Added ${portfolioEntries.length} investments to your portfolio`,
       });
 
-      setTimeout(() => navigate("/dashboard"), 800);
+      setTimeout(() => navigate("/finances"), 800);
     }
   };
 
@@ -196,7 +196,7 @@ export function Onboarding() {
       suggestions,
       completedAt: new Date().toISOString(),
     });
-    navigate("/dashboard");
+    navigate("/finances");
   };
 
   if (step === "choice") {

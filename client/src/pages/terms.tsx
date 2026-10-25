@@ -16,7 +16,7 @@ export default function TermsPage() {
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10">
       <div className="mx-auto max-w-3xl rounded-xl bg-white p-6 shadow-sm sm:p-10">
-        <Link href={isSignedIn ? "/dashboard" : "/"} className="mb-6 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900">
+        <Link href={isSignedIn ? "/finances" : "/"} className="mb-6 inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-900">
           <ArrowLeft className="h-4 w-4" /> Back
         </Link>
         <TermsContent />

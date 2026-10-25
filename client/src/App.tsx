@@ -9,10 +9,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UserProvider, useUser } from "@/context/UserContext";
 import { getOnboarding, hasAcceptedCurrentTerms } from "@/lib/userData";
-import { useSignalPolling } from "@/hooks/useSignalPolling";
-import TradingAlerts from "@/components/TradingAlerts";
 import SignIn from "@/pages/sign-in";
 import Dashboard from "@/pages/dashboard";
+import FinancesPage from "@/pages/finances";
+import AppShell from "@/components/app-shell";
 import { Onboarding } from "@/pages/onboarding";
 import MarketIntelligence from "@/pages/market-intelligence";
 import Invest from "@/pages/invest";
@@ -27,9 +27,10 @@ function Router() {
   // Bumped after the user accepts the Terms so the gate below re-reads the cache.
   const [, setTermsAccepted] = useState(0);
 
-  // Only poll for signals when someone is actually signed in. No point hitting
-  // the API on the sign-in screen
-  const { newSignals } = useSignalPolling(isSignedIn);
+  // App-wide "BUY/SELL now" pop-ups (useSignalPolling + TradingAlerts) are turned
+  // off: unsolicited trade calls are outside the planning-and-education scope and
+  // need investment-adviser/legal review before they could be offered. Market
+  // Intelligence remains available as a research page.
 
   // Wait for the stored Cognito session check before deciding what to show
   if (isLoading) {
@@ -60,14 +61,14 @@ function Router() {
   const hasOnboarded = onboarding?.completed === true;
 
   return (
-    <>
-      {/* Alert pop-ups float above everything else on every page */}
-      <TradingAlerts signals={newSignals} />
-
+    <AppShell>
       <Switch>
-        {/* Root path lands on dashboard if done with onboarding, otherwise setup first */}
-        <Route path="/" component={hasOnboarded ? Dashboard : Onboarding} />
+        {/* Root path lands on My Finances once onboarding is done, otherwise setup first */}
+        <Route path="/" component={hasOnboarded ? FinancesPage : Onboarding} />
         <Route path="/onboarding" component={Onboarding} />
+        <Route path="/finances" component={FinancesPage} />
+        <Route path="/investments" component={Dashboard} />
+        {/* Older links and bookmarks */}
         <Route path="/dashboard" component={Dashboard} />
         <Route path="/market-intelligence" component={MarketIntelligence} />
         <Route path="/invest" component={Invest} />
@@ -75,7 +76,7 @@ function Router() {
         <Route path="/analytics" component={Analytics} />
         <Route component={NotFound} />
       </Switch>
-    </>
+    </AppShell>
   );
 }
 

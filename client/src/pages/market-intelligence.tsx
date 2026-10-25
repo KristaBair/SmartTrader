@@ -207,9 +207,9 @@ export default function MarketIntelligence() {
       <div className="bg-white border-b px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
+            <Button variant="ghost" size="sm" onClick={() => navigate("/investments")}>
               <ArrowLeft className="h-4 w-4 mr-1" />
-              Dashboard
+              Investments
             </Button>
             <div>
               <h1 className="text-xl font-bold flex items-center gap-2">

@@ -6,22 +6,19 @@ import {
 } from "@/lib/userData";
 import { useUser } from "@/context/UserContext";
 import PortfolioInput from "@/components/portfolio-input";
-import PlaidAccountsPanel from "@/components/plaid-accounts";
-import SpendingAnalysisPanel from "@/components/spending-analysis";
 import AIRecommendations from "@/components/ai-recommendations";
 import MarketTrends from "@/components/market-trends";
 import PortfolioOverview from "@/components/portfolio-overview";
 import { useToast } from "@/hooks/use-toast";
-import { Bell, RefreshCw, TrendingUp, BarChart2, Trash2, DollarSign, Brain, FlaskConical, LogOut } from "lucide-react";
+import { BarChart2, Trash2, DollarSign, Brain, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import type { Recommendation } from "@shared/schema";
 
 export default function Dashboard() {
   const [, navigate] = useLocation();
-  const { user, signOut } = useUser();
+  const { user } = useUser();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   // Pre-load the saved portfolio so the form isn't blank on return visits
   const [portfolio, setPortfolio] = useState(getPortfolio());
@@ -85,7 +82,6 @@ export default function Dashboard() {
       });
     } finally {
       setIsAnalyzing(false);
-      setLastRefresh(new Date());
     }
   };
 
@@ -95,108 +91,28 @@ export default function Dashboard() {
     navigate("/onboarding");
   };
 
-  // Signs out of Cognito and returns to the sign-in screen (the Router will render SignIn
-  // automatically once user becomes null)
-  const handleSignOut = () => {
-    signOut().finally(() => navigate("/"));
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <TrendingUp className="text-white h-4 w-4" />
-              </div>
-              <h1 className="text-2xl font-bold text-gray-900">InvestSmart</h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 text-sm text-gray-500">
-                <RefreshCw className="h-4 w-4" />
-                <span>Updated: {lastRefresh.toLocaleTimeString()}</span>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate("/analytics")}
-                className="text-indigo-700 hover:text-indigo-900 hover:bg-indigo-50"
-              >
-                <FlaskConical className="h-4 w-4 mr-1" />
-                Analytics
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate("/invest")}
-                className="text-green-700 hover:text-green-900 hover:bg-green-50"
-              >
-                <DollarSign className="h-4 w-4 mr-1" />
-                Invest Now
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate("/patterns")}
-                className="text-purple-700 hover:text-purple-900 hover:bg-purple-50"
-              >
-                <Brain className="h-4 w-4 mr-1" />
-                Patterns
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate("/market-intelligence")}
-              >
-                <BarChart2 className="h-4 w-4 mr-1" />
-                Market Intel
-              </Button>
-              <button className="text-gray-600 hover:text-gray-900">
-                <Bell className="h-5 w-5" />
-              </button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleReset}
-                className="text-red-500 hover:text-red-700"
-                title="Reset portfolio and start over"
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-              {/* User avatar + sign out */}
-              {user && (
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-                    {user.firstName[0]}{user.lastName[0]}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleSignOut}
-                    className="text-gray-500 hover:text-gray-800"
-                    title="Sign out"
-                  >
-                    <LogOut className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </header>
-
+    <div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">
-            Welcome back, {user ? user.firstName : "Trader"}
-          </h2>
-          <p className="text-gray-600 mb-6">
-            {onboarding?.savingsAmount
-              ? `Managing $${onboarding.savingsAmount.toLocaleString()} · AI-powered insights`
-              : "Let's optimize your investment strategy with AI-powered insights"}
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">Investments</h1>
+              <p className="text-sm text-slate-500">
+                Research tools and holdings you enter by hand. Linked accounts are on My Finances.
+                {onboarding?.savingsAmount ? ` Starting savings you entered: $${onboarding.savingsAmount.toLocaleString()}.` : ""}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleReset}
+              className="text-red-600 hover:text-red-700"
+              title="Clear manual holdings, onboarding answers, and recommendations"
+            >
+              <Trash2 className="h-4 w-4 mr-1" /> Reset investment profile
+            </Button>
+          </div>
 
           {/* Feature cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -249,15 +165,13 @@ export default function Dashboard() {
                 </div>
                 <h3 className="font-bold text-blue-900">Market Intel</h3>
               </div>
-              <p className="text-sm text-blue-800">Live financial news with AI trading signals and market event tracking.</p>
+              <p className="text-sm text-blue-800">Financial news with AI-summarized market events. Research only, not trade instructions.</p>
             </button>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1 space-y-4">
-            <PlaidAccountsPanel />
-            <SpendingAnalysisPanel />
             <PortfolioInput
               portfolio={portfolio as SavedPortfolio}
               onPortfolioChange={handlePortfolioChange}

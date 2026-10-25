@@ -6,6 +6,8 @@
 //   USER#<cognitoSub>  RECOMMENDATIONS    Recommendation[]
 //   USER#<cognitoSub>  TERMS              TermsAcceptance
 //   USER#<cognitoSub>  PLAID#<itemId>     StoredPlaidItem
+//   USER#<cognitoSub>  RECONCILIATION     ReconciliationDecisions (manual vs. linked)
+//   USER#<cognitoSub>  LIABILITY#<id>     ManualLiability
 //   MARKET#<symbol>    QUOTE              Legacy placeholder quotes; no longer read or written
 //
 // Every user item is keyed by the Cognito `sub` taken from a verified token, so one
@@ -26,10 +28,11 @@ import type {
   TermsAcceptance,
   UserData,
 } from "@shared/schema";
+import { reconciliationSchema, type ManualLiability, type ReconciliationDecisions } from "@shared/finance";
 
 const TableName = awsConfig.tableName;
 
-type UserItemKind = "PORTFOLIO" | "ONBOARDING" | "RECOMMENDATIONS" | "TERMS";
+type UserItemKind = "PORTFOLIO" | "ONBOARDING" | "RECOMMENDATIONS" | "TERMS" | "RECONCILIATION";
 
 const userPk = (userId: string) => `USER#${userId}`;
 
@@ -50,6 +53,25 @@ async function putUserItem(userId: string, sk: UserItemKind, data: unknown) {
       Item: { PK: userPk(userId), SK: sk, data, updatedAt: new Date().toISOString() },
     })
   );
+}
+
+// Items whose sort key starts with `prefix`, e.g. every LIABILITY#<id>.
+async function queryUserPrefix(userId: string, prefix: string): Promise<Record<string, unknown>[]> {
+  const items: Record<string, unknown>[] = [];
+  let ExclusiveStartKey: Record<string, unknown> | undefined;
+  do {
+    const result = await dynamo.send(
+      new QueryCommand({
+        TableName,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :prefix)",
+        ExpressionAttributeValues: { ":pk": userPk(userId), ":prefix": prefix },
+        ExclusiveStartKey,
+      })
+    );
+    items.push(...(result.Items ?? []));
+    ExclusiveStartKey = result.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return items;
 }
 
 export class DynamoStorage {
@@ -135,6 +157,44 @@ export class DynamoStorage {
         Key: { PK: userPk(userId), SK: `PLAID#${itemId}` },
       })
     );
+  }
+
+  // ── Reconciliation and manual liabilities ────────────────────────────────
+
+  async getReconciliation(userId: string): Promise<ReconciliationDecisions> {
+    const result = await dynamo.send(
+      new GetCommand({ TableName, Key: { PK: userPk(userId), SK: "RECONCILIATION" } })
+    );
+    const parsed = reconciliationSchema.safeParse(result.Item?.data ?? {});
+    return parsed.success ? parsed.data : { holdings: {} };
+  }
+
+  async saveReconciliation(userId: string, decisions: ReconciliationDecisions): Promise<void> {
+    await putUserItem(userId, "RECONCILIATION", decisions);
+  }
+
+  async getManualLiabilities(userId: string): Promise<ManualLiability[]> {
+    const items = await queryUserPrefix(userId, "LIABILITY#");
+    return items
+      .map((item) => item.data as ManualLiability)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async saveManualLiability(userId: string, liability: ManualLiability): Promise<void> {
+    await dynamo.send(
+      new PutCommand({
+        TableName,
+        Item: { PK: userPk(userId), SK: `LIABILITY#${liability.id}`, data: liability, updatedAt: liability.updatedAt },
+      })
+    );
+  }
+
+  // Returns false when there was nothing to delete.
+  async deleteManualLiability(userId: string, id: string): Promise<boolean> {
+    const result = await dynamo.send(
+      new DeleteCommand({ TableName, Key: { PK: userPk(userId), SK: `LIABILITY#${id}` }, ReturnValues: "ALL_OLD" })
+    );
+    return Boolean(result.Attributes);
   }
 
   // Removes portfolio, onboarding, and recommendations (the "reset" button).

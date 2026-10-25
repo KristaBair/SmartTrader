@@ -138,8 +138,8 @@ export default function Patterns() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-4">
-              <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
-                <ArrowLeft className="h-4 w-4 mr-1" /> Dashboard
+              <Button variant="ghost" size="sm" onClick={() => navigate("/investments")}>
+                <ArrowLeft className="h-4 w-4 mr-1" /> Investments
               </Button>
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">

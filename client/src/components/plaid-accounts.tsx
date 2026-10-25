@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -112,6 +112,8 @@ export default function PlaidAccountsPanel() {
       const response = await apiRequest("GET", "/api/plaid/accounts");
       const data = await response.json() as { items: PlaidItem[] };
       setItems(Array.isArray(data.items) ? data.items : []);
+      // Linking or removing an account changes every reconciled total.
+      void queryClient.invalidateQueries({ queryKey: ["/api/finances/overview"] });
       if (showToast) {
         toast({ title: "Investment accounts refreshed" });
       }

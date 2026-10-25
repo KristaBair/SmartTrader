@@ -49,7 +49,23 @@ aws cloudformation describe-stacks --stack-name smarttrader --region us-east-2 \
 - **Hosted on Replit**: create an IAM user for the app, attach only the
   `AppServerPolicyArn` policy, create an access key, and store it in Replit
   Secrets as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Rotate it
-  periodically.
+  periodically. The IAM user `smarttrader-app` already exists with only that
+  policy attached; create its access key in the IAM console.
+
+### Why an access key on Replit (checked 2026-10-25)
+
+Temporary credentials were evaluated first. In this project's AWS environment
+(new AWS experience), the managed service control policy denies both options
+that would give a Replit-hosted server short-lived credentials:
+
+- IAM Roles Anywhere (`rolesanywhere:*`): explicit deny.
+- OIDC federation from Replit's workload identity (`iam:*OpenIDConnectProvider*`): explicit deny.
+
+So on Replit, a least-privilege access key is the only working option. To use
+temporary credentials instead, either activate advanced features for the
+project (then Roles Anywhere becomes possible), or host the server on AWS
+(App Runner, ECS, or Lambda in us-east-2) with the policy on its IAM role.
+Both are infrastructure changes that need approval.
 
 ## 4. Set Replit Secrets
 

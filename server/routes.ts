@@ -31,15 +31,17 @@ import {
   createPlaidClient,
   decryptPlaidAccessToken,
   encryptPlaidAccessToken,
-  getPlaidErrorDetails,
   getPlaidSetupStatus,
 } from "./services/plaid";
+import type { SpendingAnalysisSummary } from "./services/spendingAnalysis";
 import {
-  calculateSpendingAnalysis,
-  type SpendingAnalysisSummary,
-} from "./services/spendingAnalysis";
+  loadSpendingAnalysis,
+  logPlaidFailure,
+  SpendingAnalysisError,
+} from "./services/finance/plaidData";
 import { TERMS_VERSION } from "@shared/terms";
 import { findOverlappingSymbols } from "./services/holdingsReconciliation";
+import { registerFinanceRoutes } from "./financeRoutes";
 
 interface TradingSignal {
   ticker: string;
@@ -97,16 +99,6 @@ interface PlaidItemView {
   holdings: PlaidHoldingView[];
   transactions: PlaidTransactionView[];
   transactionsAvailable: boolean;
-}
-
-function logPlaidFailure(operation: string, error: unknown) {
-  const details = getPlaidErrorDetails(error);
-  console.warn("Plaid operation failed", {
-    operation,
-    errorCode: details.code,
-    requestId: details.requestId,
-  });
-  return details;
 }
 
 async function fetchPlaidItemSnapshot(
@@ -296,102 +288,6 @@ async function getPlaidAnalysisContext(userId: string): Promise<{
   };
 }
 
-class SpendingAnalysisError extends Error {
-  constructor(public status: number, public code: string, message: string) {
-    super(message);
-  }
-}
-
-// Pulls 90 days of transactions from every bank connection and reduces them to a
-// cash-flow summary. Raw transactions never leave this function.
-async function loadSpendingAnalysis(userId: string): Promise<{
-  analysis: SpendingAnalysisSummary;
-  excludedCurrencyCount: number;
-}> {
-  const items = (await storage.getPlaidItems(userId)).filter((item) =>
-    (item.products || []).includes("transactions")
-  );
-  if (items.length === 0) {
-    throw new SpendingAnalysisError(
-      409,
-      "NO_SPENDING_ACCOUNTS",
-      "Connect a checking or savings account with the spending connection button first."
-    );
-  }
-
-  const client = createPlaidClient();
-  const periodEnd = new Date().toISOString().slice(0, 10);
-  const endTime = Date.parse(`${periodEnd}T00:00:00.000Z`);
-  const periodStart = new Date(endTime - 89 * 86_400_000).toISOString().slice(0, 10);
-  const transactions: Array<{
-    amount: number;
-    category: string;
-    primaryCategory: string;
-    pending: boolean;
-  }> = [];
-  let excludedCurrencyCount = 0;
-  const maxTransactionsPerItem = 5_000;
-
-  for (const item of items) {
-    const accessToken = decryptPlaidAccessToken(
-      item.encryptedAccessToken,
-      `${userId}:${item.itemId}`
-    );
-    let offset = 0;
-    let totalTransactions = Number.POSITIVE_INFINITY;
-    while (offset < totalTransactions && offset < maxTransactionsPerItem) {
-      const response = await client.transactionsGet({
-        access_token: accessToken,
-        start_date: periodStart,
-        end_date: periodEnd,
-        options: { count: 500, offset },
-      });
-      totalTransactions = response.data.total_transactions;
-      for (const transaction of response.data.transactions) {
-        if (transaction.iso_currency_code !== "USD") {
-          excludedCurrencyCount += 1;
-          continue;
-        }
-        const primaryCategory =
-          transaction.personal_finance_category?.primary
-          || transaction.category?.[0]
-          || "OTHER";
-        transactions.push({
-          amount: transaction.amount,
-          category:
-            transaction.personal_finance_category?.detailed
-            || primaryCategory,
-          primaryCategory,
-          pending: transaction.pending,
-        });
-      }
-      const received = response.data.transactions.length;
-      if (received === 0) break;
-      offset += received;
-    }
-
-    if (offset < totalTransactions) {
-      throw new SpendingAnalysisError(
-        422,
-        "SPENDING_TRANSACTION_LIMIT",
-        "Too many transactions were returned for one account. Narrow the connected accounts and try again."
-      );
-    }
-    await storage.savePlaidItem(userId, { ...item, lastSyncedAt: new Date().toISOString() });
-  }
-
-  const analysis = calculateSpendingAnalysis(transactions, periodStart, periodEnd);
-  if (analysis.transactionsAnalyzed === 0) {
-    throw new SpendingAnalysisError(
-      422,
-      "NO_COMPLETED_TRANSACTIONS",
-      "There are no completed USD transactions to analyze in the last 90 days."
-    );
-  }
-
-  return { analysis, excludedCurrencyCount };
-}
-
 function formatSpendingForPrompt(analysis: SpendingAnalysisSummary): string {
   const categories = analysis.categories
     .map((category) => `  - ${category.category}: $${category.monthlyAverage.toFixed(2)}/month`)
@@ -443,7 +339,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Could not verify Terms acceptance" });
     }
   };
-  app.use(["/api/plaid", "/api/spending", "/api/portfolios/analyze-direct"], requireCurrentTerms);
+  app.use(["/api/plaid", "/api/spending", "/api/portfolios/analyze-direct", "/api/finances"], requireCurrentTerms);
+  registerFinanceRoutes(app);
 
   app.put("/api/me/terms", async (req, res) => {
     const body = z.object({ version: z.literal(TERMS_VERSION) }).safeParse(req.body);

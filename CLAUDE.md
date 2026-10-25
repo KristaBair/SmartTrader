@@ -51,6 +51,7 @@ Where this guidance conflicts with the project's own instructions, the project's
   - MUST create all Regional resources in the project's assigned Region
   - You CAN create AWS WAF and Cloudwatch Logs resources in us-east-1 when there are global resources (like a global WAF instance) that require a connection to dependencies in us-east-1. You should not use these for any other reason, because resources in the selected Region will provide lower cost (due to no cross-Region traffic), increased availability (due to no cross-Region traffic), and easier manageability (due to not needing to look in another Region). When you need to do an inventory of resources, you need to look in both the selected Region and us-east-1 for Cloudwatch Logs or WAF resources.
   - MUST NOT attempt to create Lambda, API Gateway, or other Regional resources in any other Region
+  - MUST direct users to confirm their Region in AWS Settings > View all projects > Overview > Additional Info > Region. If the user cannot confirm their Region, check in ~/.aws/config
   - MUST NOT use Lambda@Edge — excluded from both Lambda and CloudFront
   - MUST NOT use CloudFormation StackSets — no multi-account or multi-Region deployments
   - MUST NOT attempt cross-Region actions — no cross-Region replication for DynamoDB/S3/RDS, no multi-Region KMS keys
@@ -67,8 +68,8 @@ Where this guidance conflicts with the project's own instructions, the project's
 - The user sets up billing, creates spend limits, and retrieves and pays invoices in AWS Settings. The user creates budgets and optimizes their costs in the AWS Billing and Cost Management console
 - Not all AWS services are available. If a service isn't working, do the following:
   1. Run the command `aws freetier get-account-plan-state`
-  2. If `accountPlanType` is `FREE`, check the [Free Tier supported services list](https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.html#supported-services-free-tier) next,
-  3. If `accountPlanType` is `PAID`, check the [Paid Tier supported services list](https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.html#supported-services-paid-plan).
+  2. If accountPlanType": "FREE", check the [Free Tier supported services list](https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.html#supported-services-free-tier) next,
+  3. If accountPlanType": "PAID", check the [Paid Tier supported services list](https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.html#supported-services-paid-plan).
   4. If neither list shows the service, check the [Not supported for this experience list](https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.html#unsupported-services). The user will need to activate advanced features to access this service.
 - Users can activate advanced AWS services and capabilities for their account.
 - Before starting a task, check whether a relevant AWS skill is available. Load the skill with retrieve_skill and prefer its guidance over general knowledge.
@@ -76,6 +77,29 @@ Where this guidance conflicts with the project's own instructions, the project's
 ### Help level
 
 - **Saved help_level: HIGH** (selected by the user for this project)
-- For HIGH guidance, explain what each step does and why before executing it, suggest alternatives when a better approach exists, and flag best practices and trade-offs. Still execute the user's choice if they disagree.
 
+You CAN update this rule file to save a user's help_level.
+
+Constraints for each level:
+
+**LOW:**
+
+- MUST follow all constraints in this context file
+- MUST execute the user’s request without modification
+- MUST NOT ask clarifying questions unless the action would create a security vulnerability
+- MUST NOT suggest alternatives or improvements
+
+**MEDIUM:**
+
+- MUST execute the user's request
+- MAY ask up to two clarifying questions per task if the request has an ambiguity or a potential issue
+- MUST NOT repeat a question or suggestion the user has already dismissed
+- MUST NOT explain trade-offs or alternatives unless the user asks
+
+**HIGH:**
+
+- MUST explain what each step does and why before executing it
+- MUST suggest alternatives when a better approach exists
+- MUST flag best practices and explain trade-offs
+- MUST still execute the user's choice if they disagree with a suggestion
 <!-- END AWS Agent Toolkit rules -->
